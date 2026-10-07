@@ -153,6 +153,7 @@ let adaptive: AdaptiveQuality | undefined;
 settings.subscribe((s, changed) => {
   if (changed.includes('view')) game.setView(s.view);
   if (changed.includes('outline')) pipeline.outline.enabled = s.outline && !perf.outlineOff;
+  if (changed.includes('vegetationOutline')) ENV.uVegetationInk.value = s.vegetationOutline ? 1 : 0;
   if (changed.includes('adaptive') && adaptive) adaptive.enabled = s.adaptive;
   if (changed.includes('showFps')) hud.showFps(s.showFps);
   if (changed.includes('volume')) sound.setVolume(s.volume);
@@ -181,6 +182,7 @@ settings.subscribe((s, changed) => {
         ground.geometry.dispose();
         ground.geometry = geo;
         buildPropMeshes(layout, d, props);
+        wildlife.refreshModels();
         hud.toast(`Độ chi tiết: ${d.label}`);
         if (DEBUG) console.info(`detail ${s.detail}: ${Math.round(performance.now() - t0)} ms (worker)`);
       });

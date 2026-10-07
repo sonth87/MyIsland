@@ -43,6 +43,8 @@ export const ENV = {
   uWaterQuality: { value: 0.33 },
   /** Sky colour the water reflects at grazing angles (environments keep it in sync with the sky). */
   uSkyTint: { value: new THREE.Color('#b9e2e6') },
+  /** 1 = ink outlines on vegetation (trees, bushes, foliage), 0 = none (other objects keep theirs). */
+  uVegetationInk: { value: 1 },
 };
 
 export type SwayKind = 'grass' | 'tree';
@@ -89,6 +91,13 @@ export interface EnvOptions {
    * (see `lowpoly.seasonKind`). Colours change, leaves are shed, crops grow and are cut.
    */
   season?: boolean;
+  /**
+   * Alpha-cut leaf cards (double-sided): lit with the geometry's own (crown-shaped) normals on
+   * both sides, and cut out by the texture alpha in the shadow and outline passes too.
+   */
+  foliage?: boolean;
+  /** Fish: the body (along +Z, head forward) undulates, more towards the tail. */
+  swim?: boolean;
 }
 
 
@@ -235,6 +244,17 @@ const SWAY_VERTEX = /* glsl */ `
            + sin(dot(wp, vec3(-0.17, 0.11, 0.39)) * 1.4 + uTime * 1.8) * 0.3
            + sin(dot(wp, vec3(0.53, -0.21, -0.12)) * 2.1 + uTime * 2.6) * 0.15;
   transformed += ENV_UP(position) * sw * 0.09 * uWaterQuality * clamp(aDepth * 1.5, 0.0, 1.0);
+}
+#endif
+#ifdef ENV_SWIM
+{
+  #ifdef USE_INSTANCING
+    float swPhase = dot((modelMatrix * instanceMatrix)[3].xyz, vec3(1.7, 2.3, 1.1));
+  #else
+    float swPhase = 0.0;
+  #endif
+  float swTail = clamp((0.18 - position.z) / 0.5, 0.0, 1.0);
+  transformed.x += sin(position.z * 11.0 - uTime * 16.0 + swPhase) * 0.075 * swTail * swTail;
 }
 #endif
 #if defined(ENV_SWAY) || defined(ENV_PUSH)
@@ -385,6 +405,10 @@ void RE_IndirectDiffuse_Toon(const in vec3 irradiance, const in vec3 geometryPos
 
 const SURFACE_FRAGMENT = /* glsl */ `
 #include <normal_fragment_maps>
+#ifdef ENV_FOLIAGE
+  // Both sides of a leaf card take the crown's normal (no flip), so the canopy shades as one volume.
+  normal = normalize(vNormal);
+#endif
 vec3 envUp = ENV_UP(vEnvWorld);
 float envSunH = dot(envUp, uSunDir);
 float envDay = smoothstep(-0.12, 0.24, envSunH);
@@ -483,6 +507,8 @@ function defines(o: EnvOptions): Record<string, string | number> {
   if (o.glow) d.ENV_GLOW = '';
   if (o.water) d.ENV_WATER = '';
   if (o.season) d.ENV_SEASON = '';
+  if (o.foliage) d.ENV_FOLIAGE = '';
+  if (o.swim) d.ENV_SWIM = '';
   return d;
 }
 
@@ -519,9 +545,12 @@ export function envMaterial(params: THREE.MeshToonMaterialParameters = {}, optio
   return patchEnv(new THREE.MeshToonMaterial({ gradientMap: toonGradient(), ...params }), options);
 }
 
-/** Shadow-map material that applies the same wind sway, so swaying shadows match their casters. */
-export function envDepthMaterial(options: EnvOptions): THREE.MeshDepthMaterial {
-  const mat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+/**
+ * Shadow-map material that applies the same wind sway, so swaying shadows match their casters.
+ * Pass `map` + `alphaTest` (and `side`) for alpha-cut foliage so leaves cast dappled shadows.
+ */
+export function envDepthMaterial(options: EnvOptions, params: THREE.MeshDepthMaterialParameters = {}): THREE.MeshDepthMaterial {
+  const mat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, ...params });
   mat.defines = { ...defines({ ...options, snow: false, wet: false }) };
   mat.onBeforeCompile = (shader) => {
     bindUniforms(shader);
@@ -536,12 +565,57 @@ export function envDepthMaterial(options: EnvOptions): THREE.MeshDepthMaterial {
  * Normal material for the ink-outline pass with the same wind sway, so outlines move with
  * swaying trees instead of staying behind. Assign to `mesh.userData.outlineMaterial`.
  */
-export function envNormalMaterial(options: EnvOptions): THREE.MeshNormalMaterial {
+export function envNormalMaterial(options: EnvOptions, alphaMap?: THREE.Texture): THREE.MeshNormalMaterial {
   const mat = new THREE.MeshNormalMaterial();
   mat.defines = { ...defines({ ...options, snow: false, wet: false }) };
+  if (alphaMap) {
+    // Cut the leaf cards out of the outline pass too, or every card would draw a square.
+    mat.defines.USE_UV = '';
+    mat.side = THREE.DoubleSide;
+  }
   mat.onBeforeCompile = (shader) => {
     bindUniforms(shader);
     patchVertex(shader);
+    // Vegetation writes an "ink allowed" mask into alpha, which the outline pass reads, so its
+    // lines can be switched off without losing the outlines of buildings behind the trees.
+    shader.fragmentShader = ('uniform float uVegetationInk;\n' + shader.fragmentShader).replace(
+      'gl_FragColor.a = 1.0;',
+      `#ifdef ENV_SEASON
+        gl_FragColor.a = uVegetationInk;
+      #else
+        gl_FragColor.a = 1.0;
+      #endif`,
+    );
+    if (alphaMap) {
+      // Each leaf card is drawn at the depth of its cluster's centre in this pass: lines then
+      // follow the crown's silhouette and its lumps (or a conifer's tiers), not every card.
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <logdepthbuf_vertex>',
+        `#if defined(ENV_FOLIAGE) && defined(ENV_SEASON)
+        if (aSeason > 0.5) {
+          #ifdef USE_INSTANCING
+            vec4 envCc = modelViewMatrix * instanceMatrix * vec4(aCenter, 1.0);
+          #else
+            vec4 envCc = modelViewMatrix * vec4(aCenter, 1.0);
+          #endif
+          mvPosition.z = mix(mvPosition.z, envCc.z, 0.95);
+          gl_Position = projectionMatrix * mvPosition;
+        }
+        #endif
+        #include <logdepthbuf_vertex>`,
+      );
+      shader.uniforms.uCutout = { value: alphaMap };
+      shader.fragmentShader = ('uniform sampler2D uCutout;\n' + shader.fragmentShader).replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+        // A blurred (low mip) cutout: clusters read as solid blobs here, so the ink follows the
+        // outer shape of the foliage rather than circling every small gap between leaves.
+        if (texture2D(uCutout, vUv, 2.0).a < 0.5) discard;
+        #ifdef ENV_FOLIAGE
+          normal = normalize(vNormal);
+        #endif`,
+      );
+    }
   };
   const key = `env-normal:${JSON.stringify(mat.defines)}`;
   mat.customProgramCacheKey = () => key;

@@ -128,6 +128,7 @@ export class Ui {
           <p class="label">Tầm nhìn</p><div class="row" data-seg="view"></div>
           <p class="note">Càng xa càng nặng. Vật ở xa tự giảm chi tiết, sương mù che chỗ cắt.</p>
           <label class="check"><input type="checkbox" data-check="outline" /> Viền mực</label>
+          <label class="check"><input type="checkbox" data-check="vegetationOutline" /> Viền mực trên cây cỏ</label>
           <label class="check"><input type="checkbox" data-check="critters" /> Bướm, chuồn chuồn, chim én</label>
           <label class="check"><input type="checkbox" data-check="shadows" /> Bóng đổ</label>
           <label class="check"><input type="checkbox" data-check="adaptive" /> Tự giảm đồ hoạ khi máy chậm</label>

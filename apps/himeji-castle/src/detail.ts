@@ -19,8 +19,8 @@ export interface DetailPreset {
 export const DETAIL: Record<DetailLevel, DetailPreset> = {
   low: { label: 'Thấp', description: 'Cây đơn giản, ít cỏ, bóng thô. Nhẹ nhất.', terrainSegments: 100, grass: 0.3, treeNear: 0, shadowMap: 1024, maxPixelRatio: 1 },
   medium: { label: 'Vừa', description: 'Cân bằng giữa đẹp và mượt.', terrainSegments: 140, grass: 0.55, treeNear: 0, shadowMap: 2048, maxPixelRatio: 1.5 },
-  high: { label: 'Cao', description: 'Cây chi tiết ở tầm trung, cỏ dày.', terrainSegments: 180, grass: 0.8, treeNear: 85, shadowMap: 2048, maxPixelRatio: 2 },
-  ultra: { label: 'Rất cao', description: 'Mọi thứ chi tiết nhất, bóng sắc nét. Nặng nhất.', terrainSegments: 220, grass: 1, treeNear: 130, shadowMap: 4096, maxPixelRatio: 2 },
+  high: { label: 'Cao', description: 'Cây tán lá mềm, thông nhiều tầng nhánh, cỏ hoa và dương xỉ chi tiết, cá chi tiết.', terrainSegments: 180, grass: 0.8, treeNear: 85, shadowMap: 2048, maxPixelRatio: 2 },
+  ultra: { label: 'Rất cao', description: 'Như mức Cao nhưng cây chi tiết ở tầm xa hơn, bóng sắc nét. Nặng nhất.', terrainSegments: 220, grass: 1, treeNear: 130, shadowMap: 4096, maxPixelRatio: 2 },
 };
 
 /** How far things are drawn; fog closes in so the cut-off isn't visible. */

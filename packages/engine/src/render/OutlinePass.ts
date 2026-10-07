@@ -62,7 +62,10 @@ void main() {
   vec3 n0 = viewNormal(vUv);
   float depthDiff = 0.0;
   float normalDiff = 0.0;
+  // Alpha of the normal buffer: 0 where a mesh asked for no ink (e.g. vegetation switched off).
+  float ink = texture2D(tNormal, vUv).a;
   for (int i = 0; i < 4; i++) {
+    ink = min(ink, texture2D(tNormal, vUv + o[i]).a);
     // Only count neighbours that are farther away, so the line sits on the nearer object.
     depthDiff += max(viewDepth(vUv + o[i]) - d0, 0.0);
     normalDiff += 1.0 - dot(n0, viewNormal(vUv + o[i]));
@@ -71,7 +74,7 @@ void main() {
 
   float depthEdge = smoothstep(depthThreshold, depthThreshold * 2.0, depthDiff);
   float normalEdge = smoothstep(normalThreshold, normalThreshold * 1.6, normalDiff);
-  float edge = max(depthEdge, normalEdge) * strength;
+  float edge = max(depthEdge, normalEdge) * strength * ink;
   // Lines fade out with distance (matching fog), so far objects don't show as bare outlines.
   edge *= 1.0 - smoothstep(fadeRange.x, fadeRange.y, d0);
   gl_FragColor = vec4(mix(color.rgb, outlineColor, edge), color.a);

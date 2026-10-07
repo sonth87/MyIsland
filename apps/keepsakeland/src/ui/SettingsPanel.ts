@@ -102,6 +102,7 @@ export class SettingsPanel {
         <p class="label">Độ chi tiết</p><div class="row" data-seg="detail"></div>
         <p class="note" data-detail-note></p>
         <label class="check"><input type="checkbox" data-check="outline" /> Viền mực</label>
+        <label class="check"><input type="checkbox" data-check="vegetationOutline" /> Viền mực trên cây cỏ</label>
         <label class="check"><input type="checkbox" data-check="shadows" /> Bóng đổ</label>
         <label class="check"><input type="checkbox" data-check="adaptive" /> Tự giảm chất lượng khi máy chậm</label>
         <label class="check"><input type="checkbox" data-check="leaves" /> Lá rơi</label>
@@ -152,7 +153,7 @@ export class SettingsPanel {
       });
     }
     for (const input of this.el.querySelectorAll<HTMLInputElement>('[data-check]')) {
-      const key = input.dataset.check as 'outline' | 'shadows' | 'adaptive' | 'leaves' | 'critters' | 'showFps' | 'windDirAuto' | 'music' | 'muted';
+      const key = input.dataset.check as 'outline' | 'vegetationOutline' | 'shadows' | 'adaptive' | 'leaves' | 'critters' | 'showFps' | 'windDirAuto' | 'music' | 'muted';
       input.addEventListener('change', () => settings.set({ [key]: input.checked }));
     }
     this.el.querySelector('[data-all-auto]')!.addEventListener('click', () =>

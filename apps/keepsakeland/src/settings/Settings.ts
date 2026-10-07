@@ -19,6 +19,8 @@ export interface GameSettings {
   view: ViewMode;
   detail: DetailLevel;
   outline: boolean;
+  /** Ink outlines on trees, bushes and foliage (off: only buildings and characters keep them). */
+  vegetationOutline: boolean;
   shadows: boolean;
   /** Lower the quality automatically while the frame rate is poor. */
   adaptive: boolean;
@@ -46,6 +48,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   view: 'third',
   detail: device.tier === 'low' ? 'low' : 'medium',
   outline: true,
+  vegetationOutline: false,
   shadows: device.tier !== 'low',
   adaptive: true,
   leaves: true,

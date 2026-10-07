@@ -11,6 +11,8 @@ export interface ValleySettings extends ValleyEnvSettings {
   music: boolean;
   muted: boolean;
   outline: boolean;
+  /** Ink outlines on trees, bushes and foliage (off: only buildings, train, people keep them). */
+  vegetationOutline: boolean;
   showFps: boolean;
   detail: DetailLevel;
   view: ViewLevel;
@@ -43,6 +45,7 @@ export const DEFAULTS: ValleySettings = {
   music: true,
   muted: false,
   outline: true,
+  vegetationOutline: false,
   showFps: false,
   detail: START_DETAIL,
   view: START_VIEW,

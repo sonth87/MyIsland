@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { envMaterial } from '../env/envShader';
 import type { Surface } from '../env/Surface';
 import { merge, paint } from '../props/lowpoly';
+import { getQuality } from '../render/quality';
 import type { Rng } from '../world/rng';
 
 export interface PadSpot {
@@ -55,7 +56,133 @@ function flowerGeometry(): THREE.BufferGeometry {
   return merge(parts);
 }
 
+/** Piecewise-linear lookup of y at x on a polyline sorted by x. */
+function along(pts: THREE.Vector3[], x: number): number {
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    if (x >= a.x && x <= b.x) return a.y + ((b.y - a.y) * (x - a.x)) / (b.x - a.x || 1);
+  }
+  return pts[x < pts[0].x ? 0 : pts.length - 1].y;
+}
+
+const curve = (pts: number[][], n = 80) => new THREE.CatmullRomCurve3(pts.map(([x, y]) => new THREE.Vector3(x, y, 0))).getSpacedPoints(n);
+
+/**
+ * A detailed fish (after the one in "Cozzy"): a smooth body lofted from back / belly / width
+ * profiles with a darker back, saddle bands, a gill line and eyes, plus thin fins with ray
+ * stripes. Profiles are in units of 1/10 body length, head at x = 0; the model points along +Z.
+ */
+function detailedFish(): THREE.BufferGeometry {
+  const S = 0.05;
+  const top = curve([[0, 0], [0.1, 0.15], [1, 0.75], [3.5, 1.5], [9, 0.5], [9.5, 0.45], [10, 0.55]]);
+  const bot = curve([[0, 0], [0.1, -0.15], [0.5, -0.35], [4.5, -1], [8, -0.6], [9.5, -0.45], [10, -0.55]]);
+  const wid = curve([[0, 0], [0.1, 0.125], [1, 0.375], [4, 0.6], [8, 0.25], [10, 0.05]]);
+  const to3 = (x: number, y: number, lat: number) => new THREE.Vector3(lat * S, y * S, (5 - x) * S);
+
+  // Body: rings of an ellipse-like cross-section.
+  const rings = 34;
+  const around = 18;
+  const pos: number[] = [];
+  const col: number[] = [];
+  const idx: number[] = [];
+  for (let i = 0; i <= rings; i++) {
+    const x = 10 * Math.pow(i / rings, 1.35);
+    const t = along(top, x);
+    const b = along(bot, x);
+    const w = along(wid, x);
+    for (let j = 0; j <= around; j++) {
+      const th = (j / around) * Math.PI * 2;
+      const sn = Math.sin(th);
+      const p = to3(x, (t + b) / 2 + ((t - b) / 2) * sn, w * Math.cos(th));
+      pos.push(p.x, p.y, p.z);
+      // Pale belly, dark back, saddle bands on the upper flanks, darker head and gill line.
+      let v = 1.05 - 0.5 * THREE.MathUtils.smoothstep(sn, -0.3, 0.9);
+      if (x > 2.5 && x < 9) v *= 1 - 0.3 * Math.pow(0.5 + 0.5 * Math.sin(x * 2.1), 2) * THREE.MathUtils.smoothstep(sn, -0.2, 0.5);
+      if (x < 2) v *= 0.85;
+      if (Math.abs(x - 2.3) < 0.18) v *= 0.7;
+      col.push(v, v, v);
+    }
+  }
+  for (let i = 0; i < rings; i++) {
+    for (let j = 0; j < around; j++) {
+      const a = i * (around + 1) + j;
+      const b = a + around + 1;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  }
+  const body = new THREE.BufferGeometry();
+  body.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  body.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  body.setIndex(idx);
+  body.computeVertexNormals();
+  const parts: THREE.BufferGeometry[] = [body.toNonIndexed()];
+
+  /** A thin fin between `base` points on the body and an `edge` outline, striped along its rays. */
+  const fin = (base: THREE.Vector3[], edge: THREE.Vector3[]) => {
+    const fp: number[] = [];
+    const fc: number[] = [];
+    for (let i = 0; i < base.length - 1; i++) {
+      const tone = i % 2 ? 1 : 0.78;
+      const quad = [base[i], base[i + 1], edge[i + 1], base[i], edge[i + 1], edge[i]];
+      for (const q of quad) {
+        fp.push(q.x, q.y, q.z);
+        const outer = q === edge[i] || q === edge[i + 1];
+        const v = tone * (outer ? 1.1 : 0.8);
+        fc.push(v, v, v);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(fp, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(fc, 3));
+    g.computeVertexNormals();
+    return g;
+  };
+  const n = 24;
+  const sample = (pts: number[][]) => curve(pts, n);
+  const lineX = (x0: number, x1: number, f: (x: number) => number, lat = 0) =>
+    Array.from({ length: n + 1 }, (_, i) => {
+      const x = x0 + ((x1 - x0) * i) / n;
+      return to3(x, f(x), lat);
+    });
+  // Dorsal fin along the back.
+  parts.push(fin(lineX(3, 7, (x) => along(top, x) - 0.05), sample([[3, 1.45], [3.25, 2.25], [3.75, 3], [6, 2], [7, 1]]).map((p) => to3(p.x, p.y, 0))));
+  // Tail fin, from the narrow tail stem.
+  parts.push(
+    fin(
+      Array.from({ length: n + 1 }, (_, i) => to3(10, -0.55 + (1.1 * i) / n, 0)),
+      sample([[11, -1], [12.5, -1.5], [12, 0], [12.5, 1.5], [11, 1]]).map((p) => to3(p.x, p.y, 0)),
+    ),
+  );
+  // Anal fin under the tail.
+  parts.push(fin(lineX(6, 7.5, (x) => along(bot, x) + 0.05), sample([[6, -0.9], [7.25, -1.5], [7.5, -0.75]]).map((p) => to3(p.x, p.y, 0))));
+  // Pelvic and pectoral fins in pairs, splayed out from the body.
+  for (const side of [-1, 1]) {
+    const pelvic = fin(lineX(2.25, 4, (x) => along(bot, x) + 0.1), sample([[2.25, -0.7], [3.75, -2], [4, -1]]).map((p) => to3(p.x, p.y, 0)));
+    pelvic.rotateZ(side * 0.4);
+    parts.push(pelvic);
+    const pectoral = fin(
+      Array.from({ length: n + 1 }, (_, i) => to3(2.6 + 0.4 * (i / n), -0.2 + 0.4 * (i / n), 0)),
+      sample([[2.6, -0.2], [3.6, -0.9], [4.3, -0.5], [3.0, 0.2]]).map((p) => to3(p.x, p.y, 0)),
+    );
+    pectoral.rotateY(side * 0.5).translate(side * 0.5 * S, 0, 0);
+    parts.push(pectoral);
+  }
+  // Eyes: a dark pupil in a golden ring.
+  for (const side of [-1, 1]) {
+    const x = 1.1;
+    const y = (along(top, x) + along(bot, x)) / 2 + 0.15;
+    const lat = along(wid, x) * 0.85;
+    const p = to3(x, y, side * lat);
+    parts.push(paint(new THREE.SphereGeometry(0.17 * S, 10, 8).scale(0.6, 1, 1).translate(p.x, p.y, p.z), '#e8c55a', true));
+    parts.push(paint(new THREE.SphereGeometry(0.11 * S, 8, 6).scale(0.6, 1, 1).translate(p.x + side * 0.05 * S, p.y, p.z + 0.01 * S), '#101010', true));
+  }
+  for (const g of parts) g.deleteAttribute('uv');
+  return merge(parts);
+}
+
 function fishGeometry(color: string): THREE.BufferGeometry {
+  if (getQuality() >= 2) return detailedFish();
   return merge([
     paint(new THREE.SphereGeometry(0.16, 8, 6).scale(0.55, 0.75, 1.6), color),
     paint(new THREE.ConeGeometry(0.14, 0.24, 3).rotateX(Math.PI / 2).scale(0.3, 1, 1).translate(0, 0, -0.32), color),
@@ -109,7 +236,11 @@ export class Pond {
     flowerMesh.computeBoundingSphere();
 
     const fishColors = ['#e2622f', '#f0a040', '#c8cbd0'];
-    this.fish = new THREE.InstancedMesh(fishGeometry('#ffffff'), envMaterial({ vertexColors: true }, { snow: false, wet: false }), 3);
+    this.fish = new THREE.InstancedMesh(
+      fishGeometry('#ffffff'),
+      envMaterial({ vertexColors: true, side: THREE.DoubleSide }, { snow: false, wet: false, swim: true }),
+      3,
+    );
     this.fish.frustumCulled = false;
     for (let i = 0; i < 3; i++) {
       this.fish.setColorAt(i, new THREE.Color(fishColors[i]));
@@ -138,6 +269,12 @@ export class Pond {
   setSeason(w: { x: number; y: number; z: number; w: number }): void {
     this.padMesh.visible = w.w < 0.5;
     this.flowerMesh.visible = w.y > 0.3;
+  }
+
+  /** Swaps the fish model after the model quality changed (detailed fish from "high" up). */
+  refreshModel(): void {
+    this.fish.geometry.dispose();
+    this.fish.geometry = fishGeometry('#ffffff');
   }
 
   /** Objects without ink outlines. */

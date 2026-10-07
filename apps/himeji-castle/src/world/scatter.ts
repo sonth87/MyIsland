@@ -5,12 +5,16 @@ import {
   envDepthMaterial,
   envMaterial,
   envNormalMaterial,
+  foliage,
+  foliageMaterials,
+  getQuality,
   LodInstances,
   lowpoly,
   randRange,
   SpatialHash,
   treeVariants,
   type LodItem,
+  type LodOptions,
   type PadSpot,
   type Rng,
   type TreeSpecies,
@@ -41,7 +45,7 @@ export interface ValleyLayout {
   areas: Array<{ a: THREE.Vector3; b: THREE.Vector3; width: number; fixedY?: number }>;
   stationCenter: THREE.Vector3;
   pads: PadSpot[];
-  ground: Array<{ kind: 'grass' | 'flower' | 'rice' | 'bush' | 'stone' | 'litter'; item: LodItem }>;
+  ground: Array<{ kind: 'grass' | 'flower' | 'rice' | 'bush' | 'stone' | 'litter' | 'fern'; item: LodItem }>;
 }
 
 export interface VegetationDetail {
@@ -389,6 +393,27 @@ export function layoutValley(v: ValleyData): ValleyLayout {
     }
   }
 
+  // Ferns on the forest floor (drawn from the high detail level up), also on their own stream.
+  const frng = createRng(`${v.seed}:ferns`);
+  for (const t of trees) {
+    if (t.species === 'sakura' || t.species === 'bamboo' || frng() > 0.45) continue;
+    const count = 1 + Math.floor(frng() * 3);
+    for (let k = 0; k < count; k++) {
+      const ang = frng() * Math.PI * 2;
+      const r = (0.8 + frng() * 2.4) * t.scale;
+      const x = t.position.x + Math.cos(ang) * r;
+      const z = t.position.z + Math.sin(ang) * r;
+      const y = v.heightAt(x, z);
+      if (y < WATER_Y + 0.8 || gridValue(v.railDist, x, z) < 3.5 || gridValue(v.riverDist, x, z) < 12) continue;
+      const p = new THREE.Vector3(x, y - 0.05, z);
+      const sc = 0.8 + frng() * 0.8;
+      ground.push({
+        kind: 'fern',
+        item: { position: p, matrix: new THREE.Matrix4().compose(p, _q.setFromAxisAngle(Y, frng() * 6.28), _s.set(sc, sc * (0.8 + frng() * 0.4), sc)), color: new THREE.Color().setScalar(0.85 + frng() * 0.3) },
+      });
+    }
+  }
+
   // ---- lily pads in the calm water near the banks
   const pads: PadSpot[] = [];
   for (let k = 0; k < 70; k++) {
@@ -424,6 +449,7 @@ export function layoutValley(v: ValleyData): ValleyLayout {
 /**
  * Builds the LOD-managed vegetation for a detail level: every tree species × shape with a
  * detailed and a simple mesh, plus distance-limited bushes, grass, flowers, rice and stones.
+ * From the high model quality up, trees, bushes and ground plants are leaf-card foliage.
  */
 export function buildVegetation(v: ValleyData, layout: ValleyLayout, detail: VegetationDetail): { lods: LodInstances[]; solid: THREE.Group; soft: THREE.Group } {
   const solid = new THREE.Group();
@@ -433,6 +459,8 @@ export function buildVegetation(v: ValleyData, layout: ValleyLayout, detail: Veg
   const treeMat = envMaterial({ vertexColors: true }, { sway: 'tree', season: true });
   const depth = envDepthMaterial({ sway: 'tree', season: true });
   const outline = envNormalMaterial({ sway: 'tree', season: true });
+  const leafy = getQuality() >= 2;
+  const treeFoliage = leafy ? foliageMaterials({ sway: 'tree', season: true }) : null;
   for (const sp of TREE_KINDS) {
     const shapes = treeVariants(sp, vrng, VARIANTS);
     shapes.forEach((shape, vi) => {
@@ -445,7 +473,9 @@ export function buildVegetation(v: ValleyData, layout: ValleyLayout, detail: Veg
       if (!items.length) return;
       const lod = new LodInstances(
         [
-          { geometry: shape.high, maxDistance: detail.treeNear },
+          shape.foliage && treeFoliage
+            ? { geometry: shape.high, maxDistance: detail.treeNear, material: treeFoliage.material, customDepthMaterial: treeFoliage.depth, outlineMaterial: treeFoliage.outline }
+            : { geometry: shape.high, maxDistance: detail.treeNear },
           { geometry: shape.low, maxDistance: 1e5 },
         ],
         treeMat,
@@ -461,16 +491,29 @@ export function buildVegetation(v: ValleyData, layout: ValleyLayout, detail: Veg
     return all.slice(0, Math.round(all.length * frac));
   };
   const wind = envMaterial({ vertexColors: true }, { sway: 'grass', season: true });
-  const groundLod = (geo: THREE.BufferGeometry, mat: THREE.Material, items: LodItem[], dist: number, parent: THREE.Group, shadow = false) => {
-    const lod = new LodInstances([{ geometry: geo, maxDistance: dist }], mat, items, { castShadow: shadow });
+  const groundLod = (geo: THREE.BufferGeometry, mat: THREE.Material, items: LodItem[], dist: number, parent: THREE.Group, shadow = false, extra: LodOptions = {}) => {
+    const lod = new LodInstances([{ geometry: geo, maxDistance: dist }], mat, items, { castShadow: shadow, ...extra });
     lods.push(lod);
     parent.add(lod.group);
   };
   const kind = lowpoly.seasonKind;
   const K = lowpoly.SEASON_KIND;
-  groundLod(kind(lowpoly.bush(PALETTE.bush, 1), K.ground), envMaterial({ vertexColors: true }, { sway: 'grass', swayScale: 0.12, season: true }), take('bush', 1), 150, solid, true);
-  groundLod(kind(lowpoly.grassTuft(PALETTE.leafLight), K.tuft), wind, take('grass', detail.grass), 60, soft);
-  groundLod(kind(lowpoly.flower('#ffffff', '#ffffff'), K.flower), wind, take('flower', detail.grass), 65, soft);
+  if (leafy) {
+    // Leaf-card bushes (outlined, casting dappled shadows), grass clumps, flowers and ferns.
+    const bushFoliage = foliageMaterials({ sway: 'grass', swayScale: 0.12, season: true });
+    groundLod(foliage.fluffyBush(PALETTE.bush), bushFoliage.material, take('bush', 1), 150, solid, true, { customDepthMaterial: bushFoliage.depth, outlineMaterial: bushFoliage.outline });
+    const softFoliage = foliageMaterials({ sway: 'grass', season: true });
+    groundLod(kind(foliage.grassClump(PALETTE.leafLight, 0.6), K.tuft), softFoliage.material, take('grass', detail.grass), 60, soft);
+    const plant = foliage.flowerPlant(PALETTE.leaf);
+    const flowers = take('flower', detail.grass);
+    groundLod(plant.stems, softFoliage.material, flowers.map((f) => ({ position: f.position, matrix: f.matrix })), 65, soft);
+    groundLod(plant.heads, softFoliage.material, flowers, 65, soft);
+    groundLod(foliage.fernClump(PALETTE.leaf), softFoliage.material, take('fern', detail.grass), 55, soft);
+  } else {
+    groundLod(kind(lowpoly.bush(PALETTE.bush, 1), K.ground), envMaterial({ vertexColors: true }, { sway: 'grass', swayScale: 0.12, season: true }), take('bush', 1), 150, solid, true);
+    groundLod(kind(lowpoly.grassTuft(PALETTE.leafLight), K.tuft), wind, take('grass', detail.grass), 60, soft);
+    groundLod(kind(lowpoly.flower('#ffffff', '#ffffff'), K.flower), wind, take('flower', detail.grass), 65, soft);
+  }
   // Fallen leaves: a carpet under the trees in autumn.
   const leaf = new THREE.CircleGeometry(0.17, 5).rotateX(-Math.PI / 2).scale(1, 1, 1.5);
   groundLod(kind(lowpoly.paint(leaf, '#c8843a'), K.litter), envMaterial({ vertexColors: true, side: THREE.DoubleSide }, { season: true, snow: false }), take('litter', detail.grass), 42, soft);

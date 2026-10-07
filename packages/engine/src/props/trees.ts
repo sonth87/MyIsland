@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import type { Rng } from '../world/rng';
-import { q } from '../render/quality';
+import { createRng, type Rng } from '../world/rng';
+import { getQuality, q } from '../render/quality';
+import { FLUFFY_TREES } from './fluffyTrees';
 import { merge, paint, SEASON_KIND, seasonKind, type SeasonKind } from './lowpoly';
 
 export type TreeSpecies = 'sakura' | 'broadleaf' | 'maple' | 'pine' | 'bamboo';
@@ -24,6 +25,8 @@ export interface TreeVariant {
   low: THREE.BufferGeometry;
   /** Height of the top of the crown (unscaled), e.g. for birds to perch on. */
   crownTop: number;
+  /** `high` is an alpha-cut leaf-card tree: draw it with `foliageMaterials()`. */
+  foliage?: boolean;
 }
 
 const _up = new THREE.Vector3(0, 1, 0);
@@ -278,7 +281,10 @@ function bamboo(rng: Rng, c: TreeColors): TreeVariant {
   return { high: merge(high), low: merge(low), crownTop: top };
 }
 
-/** `count` different shapes of one species (deterministic for an `rng`). */
+/**
+ * `count` different shapes of one species (deterministic for an `rng`). From the high model
+ * quality up, the close-up mesh is a detailed leaf-card tree; the far one stays low poly.
+ */
 export function treeVariants(species: TreeSpecies, rng: Rng, count = 3, colors = DEFAULT_TREE_COLORS[species]): TreeVariant[] {
   const make = {
     sakura,
@@ -287,5 +293,11 @@ export function treeVariants(species: TreeSpecies, rng: Rng, count = 3, colors =
     pine,
     bamboo,
   }[species];
-  return Array.from({ length: count }, () => make(rng, colors));
+  return Array.from({ length: count }, () => {
+    const tree = make(rng, colors);
+    if (getQuality() < 2) return tree;
+    const fluffy = FLUFFY_TREES[species](createRng(Math.floor(rng() * 4294967296)), colors);
+    tree.high.dispose();
+    return { high: fluffy.geometry, low: tree.low, crownTop: fluffy.crownTop, foliage: true };
+  });
 }

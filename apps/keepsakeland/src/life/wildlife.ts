@@ -66,6 +66,10 @@ export function createWildlife(app: App, shape: PlanetShape, seed: string) {
   app.scene.add(critters.group, pond.group);
   return {
     noOutline: [critters.group, ...pond.noOutline],
+    /** Swap in the fish model for the current model quality. */
+    refreshModels() {
+      pond.refreshModel();
+    },
     update(dt: number, focus: THREE.Vector3, env: Environment, enabled: boolean) {
       const w = env.weather;
       const season = env.season;

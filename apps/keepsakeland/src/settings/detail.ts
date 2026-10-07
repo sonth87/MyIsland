@@ -48,7 +48,7 @@ export const DETAIL: Record<DetailLevel, DetailPreset> = {
   },
   high: {
     label: 'Cao',
-    description: 'Địa hình mịn hơn, tán cây tròn, cỏ dày. Cần máy khá.',
+    description: 'Địa hình mịn, cây tán lá mềm, cỏ hoa chi tiết, cá chi tiết. Cần máy khá.',
     terrainRes: 110,
     smoothTerrain: true,
     props: 1,

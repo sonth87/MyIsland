@@ -11,6 +11,10 @@ export interface LodLevel {
   geometry: THREE.BufferGeometry;
   /** Items farther than this (world units, before the global scale) use the next level. */
   maxDistance: number;
+  /** Overrides for this level (e.g. alpha-cut foliage up close, plain low poly far away). */
+  material?: THREE.Material;
+  customDepthMaterial?: THREE.Material;
+  outlineMaterial?: THREE.Material;
 }
 
 export interface LodOptions {
@@ -41,13 +45,15 @@ export class LodInstances {
     options: LodOptions = {},
   ) {
     this.meshes = levels.map((lv) => {
-      const mesh = new THREE.InstancedMesh(lv.geometry, material, Math.max(1, items.length));
+      const mesh = new THREE.InstancedMesh(lv.geometry, lv.material ?? material, Math.max(1, items.length));
       mesh.count = 0;
       mesh.frustumCulled = false;
       mesh.castShadow = options.castShadow ?? false;
       mesh.receiveShadow = options.receiveShadow ?? true;
-      if (options.customDepthMaterial) mesh.customDepthMaterial = options.customDepthMaterial;
-      if (options.outlineMaterial) mesh.userData.outlineMaterial = options.outlineMaterial;
+      const depth = lv.customDepthMaterial ?? options.customDepthMaterial;
+      const outline = lv.outlineMaterial ?? options.outlineMaterial;
+      if (depth) mesh.customDepthMaterial = depth;
+      if (outline) mesh.userData.outlineMaterial = outline;
       if (items.some((it) => it.color)) mesh.setColorAt(0, new THREE.Color(1, 1, 1));
       this.group.add(mesh);
       return mesh;
@@ -99,6 +105,5 @@ export class LodInstances {
       m.geometry.dispose();
       m.dispose();
     }
-
   }
 }

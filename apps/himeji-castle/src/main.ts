@@ -392,6 +392,7 @@ settings.subscribe((s, changed) => {
     if (changed.length === 1) ui.toast(CAM_MODES.find((c) => c.id === s.camera)!.label, 1200);
   }
   if (changed.includes('outline')) pipeline.outline.enabled = s.outline && !perf.outlineOff;
+  if (changed.includes('vegetationOutline')) ENV.uVegetationInk.value = s.vegetationOutline ? 1 : 0;
   if (changed.includes('shadows')) app.renderer.shadowMap.enabled = s.shadows && !perf.shadowsOff;
   if (changed.includes('adaptive') && adaptive) adaptive.enabled = s.adaptive;
   if (changed.includes('volume')) sound.setVolume(s.volume);
@@ -436,6 +437,7 @@ settings.subscribe((s, changed) => {
         rebuilt.water.geometry.dispose();
         ground.geometry = rebuilt.ground.geometry;
         rebuildVegetation();
+        pond.refreshModel();
         ui.toast(`Độ chi tiết: ${d.label}`);
       }, 30);
     }
@@ -498,6 +500,6 @@ if (gui) {
   gui.add(pipeline.outline.params, 'thickness', 0.5, 3, 0.25);
   gui.add(train, 'speed', 0, 24).listen();
 }
-if (DEBUG) Object.assign(window, { valley: { critters, app, settings, env, director, train, boat, birds, valley, railway, layout, people } });
+if (DEBUG) Object.assign(window, { valley: { critters, app, settings, env, director, train, boat, birds, valley, railway, layout, people, pond } });
 
 app.start();

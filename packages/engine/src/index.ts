@@ -10,6 +10,8 @@ export { createRng, randPick, randRange, type Rng } from './world/rng';
 export { createNoise, type NoiseSet } from './world/noise';
 export { SpatialHash } from './world/SpatialHash';
 export * as lowpoly from './props/lowpoly';
+export * as foliage from './props/foliage';
+export { foliageMaterials, type FoliageMaterials } from './props/foliage';
 export { createDebug, DEBUG, type DebugTools } from './debug/debug';
 export {
   ENV,

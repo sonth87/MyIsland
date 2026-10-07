@@ -5,6 +5,8 @@ import {
   getQuality,
   envMaterial,
   envNormalMaterial,
+  foliage,
+  foliageMaterials,
   lowpoly,
   randRange,
   SpatialHash,
@@ -50,6 +52,8 @@ interface Placed {
   matrix: THREE.Matrix4;
   tint: THREE.Color;
 }
+
+const WHITE = new THREE.Color(1, 1, 1);
 
 /** Where everything goes. Computed once; meshes are (re)built from it for any detail level. */
 export interface PropLayout {
@@ -268,14 +272,19 @@ export function buildPropMeshes(layout: PropLayout, detail: DetailPreset, out: P
   // Ink outlines are drawn from a normal pass; give it the same sway (and shed leaves) so lines follow the trees.
   const treeOutline = envNormalMaterial({ sway: 'tree', season: true });
   const shapes = treeShapes();
+  // High / ultra: leaf-card trees, bushes and plants (see engine `foliage`).
+  const leafy = getQuality() >= 2;
+  const treeFoliage = leafy ? foliageMaterials({ sway: 'tree', season: true }) : null;
   for (const sp of TREE_SPECIES) {
     shapes.get(sp)!.forEach((shape, vi) => {
       const list = layout.trees.filter((t) => t.species === sp && t.variant === vi);
       if (!list.length) return;
       // Low detail: the simple far-away shape; otherwise the full branching tree.
-        const mesh = instanced((d > 0 || detail.grass > 0.2 ? shape.high : shape.low).clone(), treeMat, list);
-      mesh.customDepthMaterial = treeDepth;
-      mesh.userData.outlineMaterial = treeOutline;
+      const geometry = (d > 0 || detail.grass > 0.2 ? shape.high : shape.low).clone();
+      const f = shape.foliage && treeFoliage && geometry.hasAttribute('uv') ? treeFoliage : null;
+      const mesh = instanced(geometry, f ? f.material : treeMat, list);
+      mesh.customDepthMaterial = f ? f.depth : treeDepth;
+      mesh.userData.outlineMaterial = f ? f.outline : treeOutline;
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       out.solid.add(mesh);
@@ -286,12 +295,12 @@ export function buildPropMeshes(layout: PropLayout, detail: DetailPreset, out: P
   const rockMesh = instanced(lowpoly.rock(PALETTE.rock, d), propMat, layout.rocks);
   const K = lowpoly.SEASON_KIND;
   const kind = lowpoly.seasonKind;
-  const bushMesh = instanced(
-    kind(lowpoly.bush(PALETTE.bush, d), K.ground),
-    envMaterial({ vertexColors: true }, { sway: 'grass', swayScale: 0.12, season: true }),
-    layout.bushes,
-  );
-  bushMesh.userData.outlineMaterial = envNormalMaterial({ sway: 'grass', swayScale: 0.12, season: true });
+  const bushFoliage = leafy ? foliageMaterials({ sway: 'grass', swayScale: 0.12, season: true }) : null;
+  const bushMesh = bushFoliage
+    ? instanced(foliage.fluffyBush(PALETTE.bush), bushFoliage.material, layout.bushes)
+    : instanced(kind(lowpoly.bush(PALETTE.bush, d), K.ground), envMaterial({ vertexColors: true }, { sway: 'grass', swayScale: 0.12, season: true }), layout.bushes);
+  if (bushFoliage) bushMesh.customDepthMaterial = bushFoliage.depth;
+  bushMesh.userData.outlineMaterial = bushFoliage ? bushFoliage.outline : envNormalMaterial({ sway: 'grass', swayScale: 0.12, season: true });
   for (const m of [rockMesh, bushMesh]) {
     m.castShadow = true;
     m.receiveShadow = true;
@@ -301,10 +310,21 @@ export function buildPropMeshes(layout: PropLayout, detail: DetailPreset, out: P
   const windMat = envMaterial({ vertexColors: true }, { sway: 'grass', push: true, season: true });
   const take = <T>(list: T[], fraction: number) => list.slice(0, Math.round(list.length * fraction));
   const leaf = new THREE.CircleGeometry(0.17, 5).rotateX(-Math.PI / 2).scale(1, 1, 1.5);
+  const leafMat = leafy ? foliageMaterials({ sway: 'grass', push: true, season: true }).material : null;
+  const flowers = take(layout.flowers, detail.flowers);
+  const plant = leafMat ? foliage.flowerPlant(PALETTE.leaf) : null;
   const soft = [
-    instanced(kind(lowpoly.grassTuft(PALETTE.leafLight), K.tuft), windMat, take(layout.grass, detail.grass)),
+    leafMat
+      ? instanced(kind(foliage.grassClump(PALETTE.leafLight, 0.4), K.tuft), leafMat, take(layout.grass, detail.grass))
+      : instanced(kind(lowpoly.grassTuft(PALETTE.leafLight), K.tuft), windMat, take(layout.grass, detail.grass)),
     instanced(kind(lowpoly.grassTuft(PALETTE.rice, 0.75, 5), K.crop), windMat, take(layout.rice, detail.rice)),
-    instanced(kind(lowpoly.flower('#ffffff', '#ffffff'), K.flower), windMat, take(layout.flowers, detail.flowers)),
+    ...(plant && leafMat
+      ? [
+          // Stems keep their own green; only the flower heads take the instance colour.
+          instanced(plant.stems, leafMat, flowers.map((f) => ({ ...f, tint: WHITE }))),
+          instanced(plant.heads, leafMat, flowers),
+        ]
+      : [instanced(kind(lowpoly.flower('#ffffff', '#ffffff'), K.flower), windMat, flowers)]),
     // Fallen leaves: only in autumn (the shader hides them the rest of the year).
     instanced(
       kind(lowpoly.paint(leaf, '#c8843a'), K.litter),
