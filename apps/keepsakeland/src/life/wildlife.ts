@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createRng, Critters, Pond, type App, type PadSpot, type Rng } from '@g2/engine';
+import { ACTIVITY, createRng, Critters, Pond, type App, type PadSpot, type Rng } from '@g2/engine';
 import type { Environment } from '../env/Environment';
 import { anyTangent, planetSurface, type PlanetShape } from '../planet/PlanetShape';
 import { randomDir } from '../planet/surface';
@@ -68,9 +68,19 @@ export function createWildlife(app: App, shape: PlanetShape, seed: string) {
     noOutline: [critters.group, ...pond.noOutline],
     update(dt: number, focus: THREE.Vector3, env: Environment, enabled: boolean) {
       const w = env.weather;
+      const season = env.season;
       critters.group.visible = enabled;
-      if (enabled) critters.update(dt, focus, env.daylight * (1 - w.rain) * (1 - w.snow));
-      pond.update(dt, focus, 1 - w.snowCover);
+      // Butterflies and swallows in spring, dragonflies in summer, a few in autumn, none in winter.
+      const fair = env.daylight * (1 - w.rain) * (1 - w.snow);
+      if (enabled) {
+        critters.update(dt, focus, {
+          butterfly: fair * season.value(ACTIVITY.butterflies),
+          dragonfly: fair * season.value(ACTIVITY.dragonflies),
+          swallow: fair * season.value(ACTIVITY.swallows),
+        });
+      }
+      pond.setSeason(season.weights);
+      pond.update(dt, focus, season.value(ACTIVITY.pond) * (1 - w.snowCover));
     },
   };
 }

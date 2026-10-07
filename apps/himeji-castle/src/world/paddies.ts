@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { envMaterial, LodInstances, lowpoly, q, type LodItem } from '@g2/engine';
+import { envMaterial, LodInstances, lowpoly, q, type LodItem, type Season } from '@g2/engine';
 import { PADDY_RADIUS, type ValleyData } from './ValleyGen';
 
 /** Size of one paddy field (m). */
@@ -16,7 +16,8 @@ export interface PaddyCell {
   /** Position inside the field, 0..1. */
   fx: number;
   fz: number;
-  stage: Stage;
+  /** Fixed 0..1 value of this field (decides which stage it is at in each season). */
+  h: number;
   /** True on the bund (the raised path around a field). */
   bund: boolean;
 }
@@ -26,7 +27,24 @@ function hash(i: number, j: number): number {
   return s - Math.floor(s);
 }
 
-/** Which field a point belongs to and what grows there; null outside the paddies. */
+/**
+ * What grows in a field in a season. Spring: some flooded and just planted, the rest young.
+ * Summer: lush green. Autumn: ripe, golden. Winter: harvested, nothing standing.
+ */
+export function stageOf(h: number, season: Season): Stage | null {
+  switch (season) {
+    case 'spring':
+      return h < 0.4 ? 'flooded' : 'green';
+    case 'summer':
+      return h < 0.12 ? 'flooded' : 'green';
+    case 'autumn':
+      return h < 0.1 ? 'green' : 'ripe';
+    case 'winter':
+      return null;
+  }
+}
+
+/** Which field a point belongs to; null outside the paddies. */
 export function paddyCell(v: ValleyData, x: number, z: number): PaddyCell | null {
   if (!v.isPaddy(x, z)) return null;
   const gx = (x - v.paddy.x) / FIELD;
@@ -36,10 +54,8 @@ export function paddyCell(v: ValleyData, x: number, z: number): PaddyCell | null
   const fx = gx - i;
   const fz = gz - j;
   const h = hash(i, j);
-  // Neighbouring fields at different stages, like a real patchwork in late summer.
-  const stage: Stage = h < 0.22 ? 'flooded' : h < 0.55 ? 'green' : 'ripe';
   const b = BUND / FIELD / 2;
-  return { i, j, fx, fz, stage, bund: fx < b || fx > 1 - b || fz < b || fz > 1 - b };
+  return { i, j, fx, fz, h, bund: fx < b || fx > 1 - b || fz < b || fz > 1 - b };
 }
 
 const STAGE_COLOR: Record<Stage, string> = { flooded: '#8fd06a', green: '#6cbd4c', ripe: '#ecc455' };
@@ -74,7 +90,7 @@ function clump(stage: Stage): THREE.BufferGeometry {
  * Rice paddies: raised earthen bunds around every field, shallow sky-reflecting water in
  * the flooded and growing fields, and rice planted in neat rows at three growth stages.
  */
-export function buildPaddies(v: ValleyData, density: number): { group: THREE.Group; rice: THREE.Group; lods: LodInstances[]; water: THREE.Mesh } {
+export function buildPaddies(v: ValleyData, density: number, season: Season): { group: THREE.Group; rice: THREE.Group; lods: LodInstances[]; water: THREE.Mesh } {
   const group = new THREE.Group();
   group.name = 'paddies';
   const P = v.paddy;
@@ -127,7 +143,9 @@ export function buildPaddies(v: ValleyData, density: number): { group: THREE.Gro
       cz += pos.getZ(idx.getX(t + k)) / 3;
     }
     const c = paddyCell(v, cx, cz);
-    if (c && c.stage !== 'ripe' && !c.bund) keep.push(idx.getX(t), idx.getX(t + 1), idx.getX(t + 2));
+    // Water stands in the flooded fields (and in the young green ones in spring); frozen / drained in winter.
+    const stage = c ? stageOf(c.h, season) : null;
+    if (c && !c.bund && (stage === 'flooded' || (stage === 'green' && season !== 'autumn'))) keep.push(idx.getX(t), idx.getX(t + 1), idx.getX(t + 2));
   }
   wGeo.setIndex(keep);
   // See-through, so the dark mud and the young rice show and the water reads as a paddy, not a pool.
@@ -147,12 +165,13 @@ export function buildPaddies(v: ValleyData, density: number): { group: THREE.Gro
   for (let x = P.x - R; x < P.x + R; x += spacing) {
     for (let z = P.z - R; z < P.z + R; z += spacing) {
       const c = paddyCell(v, x, z);
-      if (!c || c.bund) continue;
-      if (c.stage === 'flooded' && hash(Math.round(x * 10), Math.round(z * 10)) < 0.35) continue;
+      const stage = c ? stageOf(c.h, season) : null;
+      if (!c || c.bund || !stage) continue;
+      if (stage === 'flooded' && hash(Math.round(x * 10), Math.round(z * 10)) < 0.35) continue;
       const jitter = hash(Math.round(x * 13), Math.round(z * 7));
-      const p = new THREE.Vector3(x + (jitter - 0.5) * 0.08, v.heightAt(x, z) + (c.stage === 'ripe' ? 0 : 0.05), z);
+      const p = new THREE.Vector3(x + (jitter - 0.5) * 0.08, v.heightAt(x, z) + (stage === 'ripe' ? 0 : 0.05), z);
       const s = 0.85 + jitter * 0.3;
-      byStage[c.stage].push({
+      byStage[stage].push({
         position: p,
         matrix: m.compose(p, qy.setFromAxisAngle(up, jitter * 6.28), new THREE.Vector3(s, s, s)).clone(),
         color: new THREE.Color().setScalar(0.88 + jitter * 0.2),

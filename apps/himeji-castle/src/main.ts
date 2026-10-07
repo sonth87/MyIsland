@@ -1,27 +1,33 @@
 import './styles.css';
 import * as THREE from 'three';
 import {
+  AdaptiveQuality,
   App,
   createDebug,
   createRng,
   createStylizedPipeline,
+  detectDevice,
   Critters,
   DEBUG,
   formatHour,
   hourIcon,
+  ACTIVITY,
   Pond,
+  SEASON_ICON,
+  SEASON_LABEL,
   setEnvWorld,
   setQuality,
   ENV,
   SoundScape,
   type CritterKind,
   type LodInstances,
+  type Rung,
   type Surface,
   type System,
 } from '@g2/engine';
 import { Boat } from './boat/Boat';
 import { CAM_MODES, CameraDirector } from './cameras/CameraDirector';
-import { DETAIL, QUALITY, VIEW } from './detail';
+import { DETAIL, pixelRatioCap, QUALITY, shadowMapSize, VIEW, type DetailLevel } from './detail';
 import { ValleyEnvironment } from './env/ValleyEnvironment';
 import { Birds } from './life/Birds';
 import { FlatClouds } from './life/Clouds';
@@ -40,13 +46,16 @@ import { generateValley, gridValue, groveWeight, WATER_Y } from './world/ValleyG
 setEnvWorld('flat');
 
 const settings = new Settings();
+const device = detectDevice();
+/** Things the adaptive controller has switched off at run time (not saved as the player's choices). */
+const perf = { shadowsOff: false, outlineOff: false, viewScale: 1, effectsOff: false };
 const seed = new URLSearchParams(location.search).get('seed') || 'himeji-castle';
 const detail0 = DETAIL[settings.get().detail];
 // Builders read the global model quality: set it before anything is built.
 setQuality(QUALITY[settings.get().detail]);
 ENV.uWaterQuality.value = QUALITY[settings.get().detail] / 3;
 
-const app = new App({ container: document.getElementById('app')!, fov: 50, near: 0.3, far: 900, maxPixelRatio: detail0.maxPixelRatio });
+const app = new App({ container: document.getElementById('app')!, fov: 50, near: 0.3, far: 900, maxPixelRatio: pixelRatioCap(detail0, device.touch) });
 const pipeline = createStylizedPipeline(app, { outline: { color: PALETTE.outline } });
 
 // --- world
@@ -58,19 +67,37 @@ const layout = layoutValley(valley);
 const vegetation = new THREE.Group();
 const softVegetation = new THREE.Group();
 let lods: LodInstances[] = [];
+/** Rice fields change with the season (flooded, green, golden, bare): rebuilt on their own. */
+let paddies: ReturnType<typeof buildPaddies> | null = null;
+let paddySeason = settings.get().season;
+function rebuildPaddies(): void {
+  if (paddies) {
+    for (const l of paddies.lods) {
+      lods.splice(lods.indexOf(l), 1);
+      l.dispose();
+    }
+    paddies.group.removeFromParent();
+    paddies.rice.removeFromParent();
+    paddies.group.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+  }
+  paddySeason = settings.get().season;
+  paddies = buildPaddies(valley, DETAIL[settings.get().detail].grass, paddySeason);
+  lods.push(...paddies.lods);
+  vegetation.add(paddies.group);
+  softVegetation.add(paddies.rice);
+}
 function rebuildVegetation(): void {
   for (const l of lods) l.dispose();
+  lods = [];
+  paddies = null;
   vegetation.clear();
   softVegetation.clear();
   const d = DETAIL[settings.get().detail];
   const built = buildVegetation(valley, layout, { grass: d.grass, treeNear: d.treeNear });
   lods = built.lods;
-  const paddies = buildPaddies(valley, d.grass);
-  lods.push(...paddies.lods);
-  vegetation.add(paddies.group);
-  softVegetation.add(paddies.rice);
   vegetation.add(built.solid);
   softVegetation.add(built.soft);
+  rebuildPaddies();
 }
 rebuildVegetation();
 if (DEBUG) console.info(`valley "${seed}" built in ${Math.round(performance.now() - t0)} ms`);
@@ -86,8 +113,8 @@ const surface: Surface = {
 // --- sound (unlocked by the first click / key press)
 const sound = new SoundScape();
 const unlockAudio = () => sound.unlock();
-window.addEventListener('pointerdown', unlockAudio);
-window.addEventListener('keydown', unlockAudio);
+// iOS only lets audio start from a finished tap (touchend / click), not from the first touch down.
+for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) window.addEventListener(ev, unlockAudio);
 // Clicking the 3D view takes keyboard focus away from any panel control.
 app.renderer.domElement.addEventListener('pointerdown', () => (document.activeElement as HTMLElement | null)?.blur?.());
 
@@ -142,7 +169,10 @@ for (const o of pond.noOutline) pipeline.outline.exclude(o);
 const env = new ValleyEnvironment(
   app,
   valley,
-  layout.trees.filter((t) => t.species === 'sakura').map((t) => ({ position: t.position, scale: t.scale })),
+  settings.get().season,
+  layout.trees
+    .filter((t) => t.species === 'sakura' || t.species === 'broadleaf' || t.species === 'maple')
+    .map((t) => ({ position: t.position, scale: t.scale, tag: t.species })),
   layout.lanterns,
   clouds,
   sound,
@@ -150,8 +180,14 @@ const env = new ValleyEnvironment(
 for (const o of env.noOutline) pipeline.outline.exclude(o);
 env.setHour(settings.get().fixedHour);
 
+env.precipitation.setQuality(device.mobile ? 0.5 : 1);
+
 const director = new CameraDirector(app.camera);
+const CAM_ORDER = CAM_MODES.map((c) => c.id);
 const ui = new Ui(document.getElementById('ui')!, settings, {
+  hold: (code, down) => app.input.holdKey(code, down),
+  tap: (code) => app.input.tapKey(code),
+  cycleCamera: () => settings.set({ camera: CAM_ORDER[(CAM_ORDER.indexOf(settings.get().camera) + 1) % CAM_ORDER.length] }),
   hour: () => env.hour(),
   setHour: (h) => env.setHour(h),
   status: () =>
@@ -224,6 +260,8 @@ class ValleyGame implements System {
 
     // Driving the boat (WASD or arrows).
     const inBoat = mode === 'boat' || mode === 'boatDriver';
+    // On a touch screen the virtual stick steers the boat and flies the camera.
+    input.joystickEnabled = device.touch && (inBoat || mode === 'free');
     boat.driven = inBoat;
     boat.driver.setFirstPerson(mode === 'boatDriver');
     if (inBoat) {
@@ -238,24 +276,33 @@ class ValleyGame implements System {
     director.update(dt, input, { train, boat, bridges: railway.bridges, castle: valley.castle, heightAt: valley.heightAt }, app.height);
     const cam = app.camera.position;
     ui.setTunnel(this.inTunnel(dt, cam));
-    birds.update(dt, [train.cars[0].group.position, boat.position], env.windVector());
+    birds.update(dt, [train.cars[0].group.position, boat.position], env.windVector(), env.season.value(ACTIVITY.birds));
     people.update(dt, director.firstPerson ? cam : director.focusPoint);
     env.update(dt, s, director.focusPoint, director.shadowExtent, cam);
+    // Wildlife by season: butterflies and swallows in spring, dragonflies in summer, none in winter.
     const active = env.daylight * (1 - env.weather.rain) * (1 - env.weather.snow);
-    critters.group.visible = s.critters;
-    if (s.critters) critters.update(dt, director.mode === 'overview' ? director.focusPoint : cam, active);
-    pond.update(dt, director.mode === 'overview' ? director.focusPoint : cam, 1 - env.weather.snowCover);
+    critters.group.visible = s.critters && !perf.effectsOff;
+    const at = director.mode === 'overview' ? director.focusPoint : cam;
+    if (s.critters && !perf.effectsOff) {
+      critters.update(dt, at, {
+        butterfly: active * env.season.value(ACTIVITY.butterflies),
+        dragonfly: active * env.season.value(ACTIVITY.dragonflies),
+        swallow: active * env.season.value(ACTIVITY.swallows),
+      });
+    }
+    pond.setSeason(env.season.weights);
+    pond.update(dt, at, env.season.value(ACTIVITY.pond) * (1 - env.weather.snowCover));
 
     // Level of detail: distances grow with height so the overview still shows the whole valley.
     const height = Math.max(0, cam.y - valley.heightAt(cam.x, cam.z));
-    const view = VIEW[s.view].distance + height * 1.1;
+    const view = (VIEW[s.view].distance + height * 1.1) * perf.viewScale;
     const lodScale = 1 + height / 220;
     for (const l of lods) l.update(cam, view, lodScale);
     env.viewDistance = view;
 
     this.updateBubbles(dt);
     const hour = env.hour();
-    ui.setClock(`${hourIcon(hour)} ${formatHour(hour)} · ${env.weather.describe()} · ${env.weather.describeWind()}`);
+    ui.setClock(`${SEASON_ICON[s.season]} ${SEASON_LABEL[s.season]} · ${hourIcon(hour)} ${formatHour(hour)} · ${env.weather.describe()} · ${env.weather.describeWind()}`);
     if (mode === 'driver') ui.setGauge(train.kmh, train.throttle);
     else if (inBoat) ui.setGauge(boat.kmh, Math.abs(boat.throttle));
     ui.soundReady(sound.ready);
@@ -286,6 +333,7 @@ class ValleyGame implements System {
         const w = env.weather;
         const trainNear = train.cars[0].group.position.distanceTo(people.villagers[pick].pos) < 60;
         const inGrove = groveWeight(valley, people.villagers[pick].pos.x, people.villagers[pick].pos.z) > 0.3;
+        const seasonal = LINES[settings.get().season];
         const pool =
           w.snow > 0.2
             ? LINES.snow
@@ -295,9 +343,11 @@ class ValleyGame implements System {
                 ? LINES.night
                 : trainNear && Math.random() < 0.5
                   ? LINES.train
-                  : inGrove
-                    ? [LINES.day[0], LINES.day[6]]
-                    : LINES.day;
+                  : Math.random() < 0.5
+                    ? seasonal
+                    : inGrove && settings.get().season === 'spring'
+                      ? [LINES.day[0], LINES.day[6]]
+                      : LINES.day;
         ui.say(pick, pool[Math.floor(Math.random() * pool.length)], 4);
         people.talk(pick);
       }
@@ -334,25 +384,34 @@ app.input.onClick((ndc) => {
 
 // --- settings → systems
 let builtDetail = settings.get().detail;
+// Created further down (needs the rungs); the first subscribe call runs before that.
+let adaptive: AdaptiveQuality | undefined;
 settings.subscribe((s, changed) => {
   if (changed.includes('camera')) {
     director.setMode(s.camera);
     if (changed.length === 1) ui.toast(CAM_MODES.find((c) => c.id === s.camera)!.label, 1200);
   }
-  if (changed.includes('outline')) pipeline.outline.enabled = s.outline;
-  if (changed.includes('shadows')) app.renderer.shadowMap.enabled = s.shadows;
+  if (changed.includes('outline')) pipeline.outline.enabled = s.outline && !perf.outlineOff;
+  if (changed.includes('shadows')) app.renderer.shadowMap.enabled = s.shadows && !perf.shadowsOff;
+  if (changed.includes('adaptive') && adaptive) adaptive.enabled = s.adaptive;
   if (changed.includes('volume')) sound.setVolume(s.volume);
   if (changed.includes('music')) sound.setMusic(s.music);
   if (changed.includes('muted')) sound.setMuted(s.muted);
+  if (changed.includes('season') && paddies && s.season !== paddySeason) {
+    rebuildPaddies();
+    if (changed.length === 1) ui.toast(`${SEASON_ICON[s.season]} Mùa ${SEASON_LABEL[s.season].toLowerCase()}`, 1600);
+  }
   if (changed.includes('view')) {
     app.camera.far = VIEW[s.view].distance * 1.6 + 150;
     app.camera.updateProjectionMatrix();
   }
   if (changed.includes('detail')) {
     const d = DETAIL[s.detail];
-    app.maxPixelRatio = d.maxPixelRatio;
+    app.maxPixelRatio = pixelRatioCap(d, device.touch);
     app.resize();
-    env.sun.shadow.mapSize.set(d.shadowMap, d.shadowMap);
+    adaptive?.reset();
+    const sm = shadowMapSize(d, device.mobile);
+    env.sun.shadow.mapSize.set(sm, sm);
     env.sun.shadow.map?.dispose();
     env.sun.shadow.map = null;
     if (s.detail !== builtDetail) {
@@ -383,6 +442,56 @@ settings.subscribe((s, changed) => {
   }
 });
 director.lookAt(valley.village.clone().lerp(valley.castle, 0.35));
+
+// --- automatic quality: shrink the resolution, then switch things off, while the frame rate is poor
+const DETAIL_ORDER: DetailLevel[] = ['ultra', 'high', 'medium', 'low'];
+const rungs: Rung[] = [
+  {
+    id: 'shadows',
+    label: 'tắt bóng đổ',
+    apply: () => {
+      perf.shadowsOff = true;
+      env.shadowsAllowed = false;
+      app.renderer.shadowMap.enabled = false;
+    },
+  },
+  {
+    id: 'outline',
+    label: 'tắt viền mực',
+    apply: () => {
+      perf.outlineOff = true;
+      pipeline.outline.enabled = false;
+    },
+  },
+  { id: 'view', label: 'giảm tầm nhìn', apply: () => (perf.viewScale = 0.65) },
+  {
+    id: 'detail',
+    label: 'giảm độ chi tiết',
+    apply: () => {
+      const i = DETAIL_ORDER.indexOf(settings.get().detail);
+      if (i < DETAIL_ORDER.length - 1) settings.set({ detail: DETAIL_ORDER[i + 1] });
+    },
+  },
+  {
+    id: 'effects',
+    label: 'tắt hiệu ứng phụ',
+    apply: () => {
+      perf.effectsOff = true;
+      pipeline.paper.enabled = false;
+    },
+  },
+];
+adaptive = app.add(
+  new AdaptiveQuality(app, rungs, {
+    onChange: (rung) => ui.toast(rung ? `Máy hơi chậm: đã ${rung.label} cho mượt hơn` : 'Máy hơi chậm: đã giảm độ phân giải cho mượt hơn', 3200),
+  }),
+);
+adaptive.enabled = settings.get().adaptive;
+
+// Phones: the first touch also unlocks audio; suggest landscape in portrait.
+if (device.mobile && matchMedia('(orientation: portrait)').matches) {
+  setTimeout(() => ui.toast('📱 Xoay ngang màn hình để xem rộng hơn', 4200), 2500);
+}
 
 const { gui } = createDebug(app);
 if (gui) {

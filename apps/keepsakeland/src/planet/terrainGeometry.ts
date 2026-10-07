@@ -32,8 +32,12 @@ function hash3(v: THREE.Vector3): number {
 
 const _sand = new THREE.Color();
 
-/** Flat color for one terrain triangle. */
+/** How the triangle `terrainColor` last coloured reacts to the seasons (see `SEASON_KIND`). */
+let lastKind = 0;
+
+/** Flat color for one terrain triangle; sets `lastKind`. */
 export function terrainColor(shape: PlanetShape, dir: THREE.Vector3, normal: THREE.Vector3, out: THREE.Color): THREE.Color {
+  lastKind = 0;
   const s = shape.sample(dir);
   const h = s.height - shape.radius;
   const water = shape.waterLevel - shape.radius;
@@ -47,14 +51,18 @@ export function terrainColor(shape: PlanetShape, dir: THREE.Vector3, normal: THR
     out.copy(_sand.copy(color('sand')).lerp(color('meadow'), 0.5));
   } else if (field) {
     out.copy(field.path ? color('grass') : field.cell % 3 === 0 ? color('riceDark') : color('rice'));
+    lastKind = field.path ? 1 : 5;
   } else if (s.weights.mountain > 0.2 && (h > 6.5 || flatness < 0.72)) {
     out.copy(flatness < 0.62 ? color('rockDark') : color('rock'));
   } else if (s.weights.village > 0.65) {
     out.copy(n > 0.25 ? color('dirt') : color('meadow'));
+    lastKind = n > 0.25 ? 0 : 1;
   } else if (flatness < 0.86) {
     out.copy(color('grassDark'));
+    lastKind = 1;
   } else {
     out.copy(n > 0.35 ? color('meadow') : n < -0.35 ? color('grassDark') : color('grass'));
+    lastKind = 1;
   }
   return out.multiplyScalar(0.97 + hash3(dir) * 0.06);
 }
@@ -65,6 +73,7 @@ export function buildPlanetGeometry(shape: PlanetShape, resolution = 72, smooth 
   const N = resolution;
   const positions: number[] = [];
   const colors: number[] = [];
+  const kinds: number[] = [];
   const grid: THREE.Vector3[] = [];
   const cube = new THREE.Vector3();
   const dir = new THREE.Vector3();
@@ -86,6 +95,7 @@ export function buildPlanetGeometry(shape: PlanetShape, resolution = 72, smooth 
     for (const p of [a, b, d]) {
       positions.push(p.x, p.y, p.z);
       colors.push(c.r, c.g, c.b);
+      kinds.push(lastKind);
     }
   };
 
@@ -123,6 +133,7 @@ export function buildPlanetGeometry(shape: PlanetShape, resolution = 72, smooth 
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geo.setAttribute('aSeason', new THREE.Float32BufferAttribute(kinds, 1));
   geo.computeVertexNormals();
   geo.computeBoundingSphere();
   return geo;
@@ -184,13 +195,16 @@ function buildSmoothGeometry(shape: PlanetShape, N: number): THREE.BufferGeometr
 
   const normals = geo.getAttribute('normal');
   const colors = new Float32Array(pos.count * 3);
+  const kinds = new Float32Array(pos.count);
   const c = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
     dir.fromBufferAttribute(pos, i).normalize();
     n.fromBufferAttribute(normals, i);
     terrainColor(shape, dir, n, c).toArray(colors, i * 3);
+    kinds[i] = lastKind;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.setAttribute('aSeason', new THREE.BufferAttribute(kinds, 1));
   geo.computeBoundingSphere();
   return geo;
 }

@@ -33,6 +33,7 @@ export class SoundScape {
   private nextNote = 1;
   private birds = 0;
   private crickets = 0;
+  private cicadas: { level: GainNode; target: number } | null = null;
   private music = true;
 
   get ready(): boolean {
@@ -67,6 +68,7 @@ export class SoundScape {
     this.bed('rain', 'highpass', 1400, 0.3);
     this.bed('rainLow', 'lowpass', 500, 0.7);
     this.bed('water', 'lowpass', 700, 0.8);
+    this.makeCicadas();
   }
 
   setVolume(v: number): void {
@@ -90,7 +92,8 @@ export class SoundScape {
   }
 
   /** Continuous levels, 0..1. Call every frame. */
-  setAmbience(a: { wind?: number; rain?: number; water?: number; birds?: number; crickets?: number }): void {
+  setAmbience(a: { wind?: number; rain?: number; water?: number; birds?: number; crickets?: number; cicadas?: number }): void {
+    if (a.cicadas !== undefined && this.cicadas) this.cicadas.target = a.cicadas * 0.1;
     if (a.wind !== undefined) this.setBed('wind', 0.02 + a.wind * a.wind * 0.35);
     if (a.rain !== undefined) {
       this.setBed('rain', a.rain * 0.22);
@@ -106,6 +109,11 @@ export class SoundScape {
     if (!ctx || ctx.state !== 'running') return;
     this.time += dt;
     for (const b of this.beds.values()) b.gain.gain.setTargetAtTime(b.target, ctx.currentTime, 0.4);
+    if (this.cicadas) {
+      // Cicadas rise and fall in waves.
+      const swell = 0.65 + 0.35 * Math.sin(this.time * 0.45) * Math.sin(this.time * 0.17 + 1);
+      this.cicadas.level.gain.setTargetAtTime(this.cicadas.target * swell, ctx.currentTime, 0.5);
+    }
     // The wind's pitch wanders so it whooshes instead of hissing.
     const wind = this.beds.get('wind');
     if (wind) wind.filter.frequency.setTargetAtTime(380 + Math.sin(this.time * 0.6) * 160 + Math.sin(this.time * 1.7) * 60, ctx.currentTime, 0.3);
@@ -230,6 +238,33 @@ export class SoundScape {
     src.connect(filter).connect(gain).connect(this.master);
     src.start(0, Math.random() * 2);
     this.beds.set(name, { gain, filter, target: 0 });
+  }
+
+  /** Summer cicadas: a shrill band of noise chopped by a fast buzz. */
+  private makeCicadas(): void {
+    const ctx = this.ctx!;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.loop = true;
+    src.playbackRate.value = 1.3;
+    const band = ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.value = 5600;
+    band.Q.value = 5;
+    // Buzz: the gain swings between 0 and 1 about 30 times a second.
+    const buzz = ctx.createGain();
+    buzz.gain.value = 0.5;
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 29;
+    const depth = ctx.createGain();
+    depth.gain.value = 0.5;
+    lfo.connect(depth).connect(buzz.gain);
+    const level = ctx.createGain();
+    level.gain.value = 0;
+    src.connect(band).connect(buzz).connect(level).connect(this.master);
+    src.start();
+    lfo.start();
+    this.cicadas = { level, target: 0 };
   }
 
   private setBed(name: string, v: number): void {

@@ -1,10 +1,11 @@
-import type { Level, TimeMode } from '@g2/engine';
+import { detectDevice, type Level, type Season, type TimeMode } from '@g2/engine';
 
 export type { Level };
 export type ViewMode = 'first' | 'second' | 'third';
 export type DetailLevel = 'low' | 'medium' | 'high' | 'ultra';
 
 export interface GameSettings {
+  season: Season;
   timeMode: TimeMode;
   fixedHour: number;
   dayMinutes: number;
@@ -19,6 +20,8 @@ export interface GameSettings {
   detail: DetailLevel;
   outline: boolean;
   shadows: boolean;
+  /** Lower the quality automatically while the frame rate is poor. */
+  adaptive: boolean;
   leaves: boolean;
   critters: boolean;
   showFps: boolean;
@@ -27,7 +30,10 @@ export interface GameSettings {
   muted: boolean;
 }
 
+const device = detectDevice();
+
 export const DEFAULT_SETTINGS: GameSettings = {
+  season: 'spring',
   timeMode: 'auto',
   fixedHour: 9.5,
   dayMinutes: 5,
@@ -38,9 +44,10 @@ export const DEFAULT_SETTINGS: GameSettings = {
   rain: 'auto',
   snow: 'auto',
   view: 'third',
-  detail: 'medium',
+  detail: device.tier === 'low' ? 'low' : 'medium',
   outline: true,
-  shadows: true,
+  shadows: device.tier !== 'low',
+  adaptive: true,
   leaves: true,
   critters: true,
   showFps: false,
@@ -89,6 +96,10 @@ function load(): Partial<GameSettings> {
     // Keep only known keys so stale versions can't inject garbage.
     const out: Partial<GameSettings> = {};
     for (const k of Object.keys(DEFAULT_SETTINGS) as Array<keyof GameSettings>) {
+      if (k === 'season') {
+        if (['spring', 'summer', 'autumn', 'winter'].includes(parsed.season as string)) out.season = parsed.season;
+        continue;
+      }
       if (k in parsed && typeof parsed[k] === typeof DEFAULT_SETTINGS[k]) (out as Record<string, unknown>)[k] = parsed[k];
       else if (k in parsed && (k === 'wind' || k === 'clouds' || k === 'rain' || k === 'snow')) {
         (out as Record<string, unknown>)[k] = parsed[k];

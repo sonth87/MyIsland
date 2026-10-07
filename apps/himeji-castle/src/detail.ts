@@ -17,8 +17,8 @@ export interface DetailPreset {
 }
 
 export const DETAIL: Record<DetailLevel, DetailPreset> = {
-  low: { label: 'Thấp', description: 'Cây đơn giản, ít cỏ, bóng thô. Nhẹ nhất.', terrainSegments: 100, grass: 0.3, treeNear: 30, shadowMap: 1024, maxPixelRatio: 1 },
-  medium: { label: 'Vừa', description: 'Cân bằng giữa đẹp và mượt.', terrainSegments: 140, grass: 0.55, treeNear: 55, shadowMap: 2048, maxPixelRatio: 1.5 },
+  low: { label: 'Thấp', description: 'Cây đơn giản, ít cỏ, bóng thô. Nhẹ nhất.', terrainSegments: 100, grass: 0.3, treeNear: 0, shadowMap: 1024, maxPixelRatio: 1 },
+  medium: { label: 'Vừa', description: 'Cân bằng giữa đẹp và mượt.', terrainSegments: 140, grass: 0.55, treeNear: 0, shadowMap: 2048, maxPixelRatio: 1.5 },
   high: { label: 'Cao', description: 'Cây chi tiết ở tầm trung, cỏ dày.', terrainSegments: 180, grass: 0.8, treeNear: 85, shadowMap: 2048, maxPixelRatio: 2 },
   ultra: { label: 'Rất cao', description: 'Mọi thứ chi tiết nhất, bóng sắc nét. Nặng nhất.', terrainSegments: 220, grass: 1, treeNear: 130, shadowMap: 4096, maxPixelRatio: 2 },
 };
@@ -30,3 +30,16 @@ export const VIEW: Record<ViewLevel, { label: string; distance: number }> = {
   far: { label: 'Xa', distance: 340 },
   ultra: { label: 'Rất xa', distance: 520 },
 };
+
+/**
+ * Pixel-ratio cap for a preset on this device. Phones and tablets have very dense screens, so a
+ * cap of 1 would look blurry: give them at least 1.25 (the adaptive controller lowers it if needed).
+ */
+export function pixelRatioCap(preset: DetailPreset, touch: boolean): number {
+  return touch ? Math.max(preset.maxPixelRatio, 1.25) : preset.maxPixelRatio;
+}
+
+/** Shadow map size, kept small on phones where fill rate is the limit. */
+export function shadowMapSize(preset: DetailPreset, mobile: boolean): number {
+  return mobile ? Math.min(preset.shadowMap, 1024) : preset.shadowMap;
+}

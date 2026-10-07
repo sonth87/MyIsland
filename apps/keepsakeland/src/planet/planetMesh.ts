@@ -12,7 +12,7 @@ export interface PlanetMeshes {
 }
 
 export function createPlanetMeshes(shape: PlanetShape, resolution = 72, smooth = false): PlanetMeshes {
-  const ground = new THREE.Mesh(buildPlanetGeometry(shape, resolution, smooth), envMaterial({ vertexColors: true }));
+  const ground = new THREE.Mesh(buildPlanetGeometry(shape, resolution, smooth), envMaterial({ vertexColors: true }, { season: true }));
   ground.name = 'ground';
   ground.receiveShadow = true;
   ground.castShadow = true;

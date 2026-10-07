@@ -16,6 +16,7 @@ export class TerrainBuilder {
       geo.setAttribute('position', new THREE.BufferAttribute(r.position, 3));
       geo.setAttribute('normal', new THREE.BufferAttribute(r.normal, 3));
       geo.setAttribute('color', new THREE.BufferAttribute(r.color, 3));
+      geo.setAttribute('aSeason', new THREE.BufferAttribute(r.season, 1));
       if (r.index) geo.setIndex(new THREE.BufferAttribute(r.index, 1));
       geo.computeBoundingSphere();
       this.pending.resolve(geo);

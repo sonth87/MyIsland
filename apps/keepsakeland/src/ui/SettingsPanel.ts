@@ -1,4 +1,4 @@
-import { LEVEL_NAMES, type Level } from '@g2/engine';
+import { LEVEL_NAMES, SEASONS, SEASON_ICON, SEASON_LABEL, type Level } from '@g2/engine';
 import { DETAIL } from '../settings/detail';
 import type { DetailLevel, GameSettings, Settings, ViewMode } from '../settings/Settings';
 
@@ -54,6 +54,11 @@ export class SettingsPanel {
       </header>
       <p class="status"></p>
       <section>
+        <h3>Mùa</h3>
+        <div class="row seasons" data-seg="season"></div>
+        <p class="note">Mùa đổi cây cối, hoa lá, thời tiết, chim bướm và âm thanh.</p>
+      </section>
+      <section>
         <h3>Thời gian</h3>
         <div class="row" data-seg="timeMode"></div>
         <div class="row presets"></div>
@@ -98,6 +103,7 @@ export class SettingsPanel {
         <p class="note" data-detail-note></p>
         <label class="check"><input type="checkbox" data-check="outline" /> Viền mực</label>
         <label class="check"><input type="checkbox" data-check="shadows" /> Bóng đổ</label>
+        <label class="check"><input type="checkbox" data-check="adaptive" /> Tự giảm chất lượng khi máy chậm</label>
         <label class="check"><input type="checkbox" data-check="leaves" /> Lá rơi</label>
         <label class="check"><input type="checkbox" data-check="critters" /> Bướm, chuồn chuồn, chim én</label>
         <label class="check"><input type="checkbox" data-check="showFps" /> Hiện FPS</label>
@@ -108,6 +114,10 @@ export class SettingsPanel {
     this.hourInput = this.el.querySelector('[data-hour]')!;
     this.hourLabel = this.el.querySelector('[data-hour-label]')!;
 
+    this.segment(
+      'season',
+      SEASONS.map((value) => ({ value, label: `${SEASON_ICON[value]} ${SEASON_LABEL[value]}` })),
+    );
     this.segment('timeMode', [
       { value: 'auto', label: '▶ Chạy' },
       { value: 'fixed', label: '⏸ Cố định' },
@@ -142,7 +152,7 @@ export class SettingsPanel {
       });
     }
     for (const input of this.el.querySelectorAll<HTMLInputElement>('[data-check]')) {
-      const key = input.dataset.check as 'outline' | 'shadows' | 'leaves' | 'critters' | 'showFps' | 'windDirAuto' | 'music' | 'muted';
+      const key = input.dataset.check as 'outline' | 'shadows' | 'adaptive' | 'leaves' | 'critters' | 'showFps' | 'windDirAuto' | 'music' | 'muted';
       input.addEventListener('change', () => settings.set({ [key]: input.checked }));
     }
     this.el.querySelector('[data-all-auto]')!.addEventListener('click', () =>

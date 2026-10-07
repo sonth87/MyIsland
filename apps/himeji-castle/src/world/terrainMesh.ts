@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createNoise, createRng, envMaterial } from '@g2/engine';
+import { createNoise, createRng, envMaterial, SEASON_KIND } from '@g2/engine';
 import { color } from '../palette';
 import { paddyCell } from './paddies';
 import { CASTLE_TOP_RADIUS, gridValue, groveWeight, HALF, VILLAGE_RADIUS, WATER_Y, type ValleyData } from './ValleyGen';
@@ -9,8 +9,12 @@ function hash2(x: number, z: number): number {
   return s - Math.floor(s);
 }
 
-/** Flat color for one terrain triangle at (x, y, z). */
+/** Season kind of the triangle that `terrainColor` last coloured (greens follow the seasons). */
+let lastKind: number = SEASON_KIND.none;
+
+/** Flat color for one terrain triangle at (x, y, z); sets `lastKind`. */
 function terrainColor(v: ValleyData, x: number, y: number, z: number, slope: number, n: number, out: THREE.Color): THREE.Color {
+  lastKind = SEASON_KIND.none;
   const rd = gridValue(v.riverDist, x, z);
   const td = gridValue(v.railDist, x, z);
   if (y < WATER_Y + 1.1 && rd < 16) return out.copy(color('sand'));
@@ -22,8 +26,8 @@ function terrainColor(v: ValleyData, x: number, y: number, z: number, slope: num
   const cell = paddyCell(v, x, z);
   if (cell) {
     if (cell.bund) return out.copy(color('dirt'));
-    // Wet mud under the water / ripe stubble field.
-    return out.set(cell.stage === 'ripe' ? '#8f7a4e' : '#5f5a3e');
+    // Wet mud under the water, stubble and crops.
+    return out.set('#6a5d3f');
   }
   const dv = Math.hypot(x - v.village.x, z - v.village.z);
   if (dv < VILLAGE_RADIUS - 2) return out.copy(n > 0.1 ? color('path') : color('dirt'));
@@ -31,10 +35,14 @@ function terrainColor(v: ValleyData, x: number, y: number, z: number, slope: num
   if (dc < CASTLE_TOP_RADIUS - 1) return out.copy(color('path'));
   if (y > 36) return out.copy(slope > 0.6 ? color('rock') : color('snowcap'));
   if (slope > 0.95) return out.copy(slope > 1.4 ? color('rockDark') : color('rock'));
+  lastKind = SEASON_KIND.ground;
   if (y > 24) return out.copy(n > 0 ? color('pine') : color('grassDark'));
   if (slope > 0.6) return out.copy(color('grassDark'));
-  // Fallen petals carpet the ground under the cherry trees.
-  if (groveWeight(v, x, z) * (0.6 + n) > 0.55) return out.copy(n > 0.2 ? color('petalGround') : color('meadow')).lerp(color('sakuraLight'), 0.25);
+  // Fallen petals carpet the ground under the cherry trees (in spring).
+  if (groveWeight(v, x, z) * (0.6 + n) > 0.55) {
+    lastKind = SEASON_KIND.grove;
+    return out.copy(n > 0.2 ? color('petalGround') : color('meadow')).lerp(color('sakuraLight'), 0.25);
+  }
   return out.copy(n > 0.35 ? color('meadow') : n < -0.3 ? color('grassDark') : color('grass'));
 }
 
@@ -45,6 +53,7 @@ export function buildTerrain(v: ValleyData, segments: number): { ground: THREE.M
   const pos = geo.getAttribute('position');
   for (let i = 0; i < pos.count; i++) pos.setY(i, v.heightAt(pos.getX(i), pos.getZ(i)));
   const colors = new Float32Array(pos.count * 3);
+  const kinds = new Float32Array(pos.count);
   const c = new THREE.Color();
   const a = new THREE.Vector3();
   const b = new THREE.Vector3();
@@ -61,13 +70,18 @@ export function buildTerrain(v: ValleyData, segments: number): { ground: THREE.M
     const cz = (a.z + b.z + d.z) / 3;
     const nz = noise.noise(cx * 0.03, 0, cz * 0.03);
     terrainColor(v, cx, cy, cz, slope, nz, c).multiplyScalar(0.96 + hash2(cx, cz) * 0.08);
-    for (let k = 0; k < 3; k++) c.toArray(colors, (i + k) * 3);
+    for (let k = 0; k < 3; k++) {
+      c.toArray(colors, (i + k) * 3);
+      kinds[i + k] = lastKind;
+    }
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.setAttribute('aSeason', new THREE.BufferAttribute(kinds, 1));
+  geo.setAttribute('aCenter', new THREE.BufferAttribute(new Float32Array(pos.count * 3), 3));
   geo.deleteAttribute('uv');
   geo.computeVertexNormals();
   // Double-sided so that from inside a tunnel the hill above is solid, not see-through.
-  const ground = new THREE.Mesh(geo, envMaterial({ vertexColors: true, side: THREE.DoubleSide }));
+  const ground = new THREE.Mesh(geo, envMaterial({ vertexColors: true, side: THREE.DoubleSide }, { season: true }));
   ground.name = 'ground';
   ground.receiveShadow = true;
   ground.castShadow = true;

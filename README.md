@@ -116,6 +116,10 @@ Nhấn các phím từ `1` đến `9` để lập tức chuyển sang các góc 
 | **Bầu trời đêm & Ánh đèn** | **Mùa đông tuyết phủ** |
 | ![](screenshots/keepsakeland/06-dem.png) | ![](screenshots/keepsakeland/08-tuyet.png) |
 
+### Bốn mùa & điện thoại
+- **Bốn mùa:** chọn Xuân / Hạ / Thu / Đông trong Cài đặt (mặc định là Xuân). Xuân hoa anh đào nở, chim bướm bay; Hạ cây xanh đậm, đom đóm và ve; Thu lá vàng đỏ rơi xuống nền đất; Đông cây rụng lá, tuyết phủ, không còn chim bướm.
+- **Điện thoại:** có nút cảm ứng và cần điều khiển ảo, tự chọn độ chi tiết theo máy, tự giảm chất lượng khi máy chậm (tắt được trong Cài đặt). Thêm `?quality=low` vào URL để ép mức thấp.
+
 ### Dàn nhân vật
 Bạn có thể tự do chuyển đổi để trực tiếp điều khiển bất kỳ ai trong số 5 nhân vật trên đảo (nhấn `Tab` hoặc click chọn):
 1. **Lữ khách (Traveler):** Đeo máy ảnh, thích đi dạo ngắm nhìn cảnh vật.

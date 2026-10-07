@@ -1,5 +1,6 @@
 import { MathUtils, Vector3 } from 'three';
 import type { Rng } from '../world/rng';
+import type { Season } from './Season';
 import type { Level, Surface, WeatherControls } from './Surface';
 
 interface Pattern {
@@ -11,16 +12,40 @@ interface Pattern {
   weight: number;
 }
 
-/** Weather states the automatic mode drifts between. */
-const PATTERNS: Pattern[] = [
-  { name: 'Nắng đẹp', wind: 0.2, clouds: 0.15, rain: 0, snow: 0, weight: 3 },
-  { name: 'Gió nhẹ, mây trôi', wind: 0.45, clouds: 0.4, rain: 0, snow: 0, weight: 3 },
-  { name: 'Nhiều mây', wind: 0.35, clouds: 0.75, rain: 0, snow: 0, weight: 2 },
-  { name: 'Mưa rào', wind: 0.5, clouds: 0.9, rain: 0.55, snow: 0, weight: 2 },
-  { name: 'Dông', wind: 0.85, clouds: 1, rain: 1, snow: 0, weight: 1 },
-  { name: 'Tuyết rơi', wind: 0.3, clouds: 0.8, rain: 0, snow: 0.65, weight: 1 },
-  { name: 'Gió lớn', wind: 0.85, clouds: 0.45, rain: 0, snow: 0, weight: 1 },
-];
+const P = (name: string, wind: number, clouds: number, rain: number, snow: number, weight: number): Pattern => ({ name, wind, clouds, rain, snow, weight });
+
+/** Weather states the automatic mode drifts between, for each season. */
+const PATTERNS: Record<Season, Pattern[]> = {
+  spring: [
+    P('Nắng đẹp', 0.2, 0.15, 0, 0, 3),
+    P('Gió nhẹ, mây trôi', 0.4, 0.4, 0, 0, 3),
+    P('Nhiều mây', 0.3, 0.7, 0, 0, 1.5),
+    P('Mưa xuân', 0.35, 0.85, 0.4, 0, 1.5),
+    P('Mưa rào', 0.5, 0.9, 0.6, 0, 0.7),
+  ],
+  summer: [
+    P('Nắng gắt', 0.12, 0.1, 0, 0, 4),
+    P('Nắng, vài đám mây', 0.25, 0.35, 0, 0, 3),
+    P('Nhiều mây', 0.25, 0.7, 0, 0, 1),
+    P('Mưa rào mùa hạ', 0.5, 0.9, 0.65, 0, 1.2),
+    P('Dông', 0.85, 1, 1, 0, 1.2),
+  ],
+  autumn: [
+    P('Gió thu, mây trôi', 0.5, 0.4, 0, 0, 3),
+    P('Nắng dịu', 0.25, 0.2, 0, 0, 2),
+    P('Nhiều mây', 0.4, 0.75, 0, 0, 2.5),
+    P('Mưa thu', 0.45, 0.85, 0.35, 0, 1.5),
+    P('Gió lớn', 0.85, 0.5, 0, 0, 1.5),
+  ],
+  winter: [
+    P('Tuyết rơi nhẹ', 0.25, 0.8, 0, 0.4, 3),
+    P('Tuyết rơi', 0.35, 0.9, 0, 0.7, 2.5),
+    P('Bão tuyết', 0.85, 1, 0, 1, 1),
+    P('U ám', 0.3, 0.8, 0, 0, 2.5),
+    P('Nắng lạnh', 0.2, 0.2, 0, 0, 1.5),
+    P('Gió lạnh', 0.7, 0.4, 0, 0, 1),
+  ],
+};
 
 /** World direction treated as "north" (projected onto the local ground plane). */
 const NORTH = new Vector3(0, 1, 0);
@@ -59,6 +84,8 @@ export class Weather {
   /** Wind field axis: wind at p blows along cross(windAxis, normalize(p)). */
   readonly windAxis = new Vector3(0, 1, 0);
   pattern: Pattern;
+  /** Season the automatic weather follows. */
+  season: Season = 'spring';
   private patternTime: number;
   private heading = 1;
   private time = 0;
@@ -70,8 +97,15 @@ export class Weather {
     private readonly rng: Rng,
     private readonly surface: Surface,
   ) {
-    this.pattern = PATTERNS[1];
+    this.pattern = PATTERNS.spring[1];
     this.patternTime = 50;
+  }
+
+  /** Switches the automatic weather to a season's patterns (a new one is picked at once). */
+  setSeason(season: Season): void {
+    if (season === this.season) return;
+    this.season = season;
+    this.nextPattern();
   }
 
   get storm(): boolean {
@@ -105,8 +139,10 @@ export class Weather {
     const g = 0.5 + 0.5 * Math.sin(this.time * 0.37) * Math.sin(this.time * 0.71 + 1.3);
     this.gust = this.wind * (0.7 + 0.6 * g);
 
+    // Snow melts quickly out of winter (a spring thaw), slowly inside it.
+    const melt = this.season === 'winter' ? 1 / 70 : 1 / 12;
     this.snowCover = MathUtils.clamp(
-      this.snowCover + (this.snow > 0.05 ? (this.snow * dt) / 25 : -dt / 45) - (this.rain * dt) / 20,
+      this.snowCover + (this.snow > 0.05 ? (this.snow * dt) / 25 : -dt * melt) - (this.rain * dt) / 20,
       0,
       1,
     );
@@ -138,10 +174,11 @@ export class Weather {
   }
 
   private nextPattern(): void {
-    const total = PATTERNS.reduce((sum, p) => sum + p.weight, 0);
+    const list = PATTERNS[this.season];
+    const total = list.reduce((sum, p) => sum + p.weight, 0);
     let r = this.rng() * total;
-    let next = PATTERNS[0];
-    for (const p of PATTERNS) {
+    let next = list[0];
+    for (const p of list) {
       r -= p.weight;
       if (r <= 0) {
         next = p;

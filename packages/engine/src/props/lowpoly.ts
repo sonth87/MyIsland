@@ -33,7 +33,71 @@ export function facet<T extends THREE.BufferGeometry>(geometry: T): T {
   return geometry;
 }
 
+/**
+ * How a part of a model reacts to the seasons (read by the environment shader through the
+ * per-vertex `aSeason` attribute). Parts without it never change.
+ */
+export const SEASON_KIND = {
+  none: 0,
+  /** Terrain / bush greens: fresh in spring, deep in summer, straw in autumn, pale in winter. */
+  ground: 1,
+  /** Broad leaves: green, then yellow / orange / red, then shed. */
+  leaf: 2,
+  /** Cherry blossom: pink in spring, green in summer, red in autumn, shed in winter. */
+  blossom: 3,
+  /** Pine needles: always green (a little darker in winter). */
+  evergreen: 4,
+  /** Terrain under rice fields. */
+  paddy: 5,
+  /** Rice plants: young, green, golden, then cut. */
+  crop: 6,
+  /** Grass tufts: green, dry in autumn, short in winter. */
+  tuft: 7,
+  /** Flowers: bloom from spring to early autumn. */
+  flower: 8,
+  /** Fallen leaves on the ground: only in autumn. */
+  litter: 9,
+  /** Ground under cherry trees: petals in spring, grass the rest of the year. */
+  grove: 10,
+  /** Maple leaves: red-tinged green, crimson in autumn, shed in winter. */
+  maple: 11,
+} as const;
+
+export type SeasonKind = (typeof SEASON_KIND)[keyof typeof SEASON_KIND];
+
+/**
+ * Tags every vertex of `geometry` with a season kind. For leaves, `center` is the point the
+ * foliage shrinks towards when it is shed (`'auto'` = centre of the geometry's bounding box).
+ */
+export function seasonKind(geometry: THREE.BufferGeometry, kind: SeasonKind, center?: THREE.Vector3 | 'auto'): THREE.BufferGeometry {
+  const n = geometry.getAttribute('position').count;
+  geometry.setAttribute('aSeason', new THREE.BufferAttribute(new Float32Array(n).fill(kind), 1));
+  const c = new THREE.Vector3();
+  if (center === 'auto') {
+    geometry.computeBoundingBox();
+    geometry.boundingBox!.getCenter(c);
+  } else if (center) {
+    c.copy(center);
+  }
+  const arr = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) c.toArray(arr, i * 3);
+  geometry.setAttribute('aCenter', new THREE.BufferAttribute(arr, 3));
+  return geometry;
+}
+
+const SEASON_ATTRS: Array<[string, number]> = [
+  ['aSeason', 1],
+  ['aCenter', 3],
+];
+
 export function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  // Parts that carry season data and parts that don't can be merged: fill in zeros for the latter.
+  for (const [name, size] of SEASON_ATTRS) {
+    if (!parts.some((p) => p.hasAttribute(name))) continue;
+    for (const p of parts) {
+      if (!p.hasAttribute(name)) p.setAttribute(name, new THREE.BufferAttribute(new Float32Array(p.getAttribute('position').count * size), size));
+    }
+  }
   const merged = mergeGeometries(parts);
   if (!merged) throw new Error('mergeGeometries failed (attribute mismatch)');
   return merged;

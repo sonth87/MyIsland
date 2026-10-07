@@ -9,6 +9,10 @@ export interface HudHandlers {
   onSettings(): void;
   onSwitchCharacter(): void;
   onSound(): void;
+  /** Holds / releases a keyboard key (on-screen buttons). */
+  hold(code: string, down: boolean): void;
+  /** Taps a keyboard key (on-screen buttons). */
+  tap(code: string): void;
 }
 
 const ICON_PLANET = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="7"/><path d="M3 14c4 2 14-1 18-4"/></svg>`;
@@ -82,6 +86,18 @@ export class Hud {
         <button class="icon-btn card" data-action="fullscreen" title="Toàn màn hình">${ICON_FULLSCREEN}</button>
       </div>
       <div class="prompt card"></div>
+      <div class="actions">
+        <div class="act-row">
+          <button class="act card" data-tap="KeyQ" aria-label="Vẫy tay">👋</button>
+          <button class="act card" data-tap="KeyC" aria-label="Chụp ảnh">📷</button>
+          <button class="act card" data-tap="KeyV" aria-label="Đổi góc nhìn">🎥</button>
+          <button class="act card" data-toggle="ShiftLeft" aria-label="Chạy">🏃</button>
+        </div>
+        <div class="act-row">
+          <button class="act act-big card" data-tap="KeyE" aria-label="Tương tác">✋</button>
+          <button class="act act-big card" data-hold="Space" aria-label="Nhảy">⤒</button>
+        </div>
+      </div>
       <div class="bubbles"></div>
       <div class="hintbar"></div>
       <div class="toast card"></div>
@@ -95,6 +111,47 @@ export class Hud {
     this.promptEl = root.querySelector('.prompt')!;
     this.flashEl = root.querySelector('.flash')!;
     this.fpsEl = root.querySelector('.fps')!;
+
+    root.classList.toggle('touch', isTouch);
+    root.classList.toggle('no-fullscreen', !document.documentElement.requestFullscreen);
+    // On-screen action buttons: a press is a key press (so the game needs no separate touch code).
+    for (const b of root.querySelectorAll<HTMLElement>('.act')) {
+      const hold = b.dataset.hold;
+      const tap = b.dataset.tap;
+      const toggle = b.dataset.toggle;
+      if (hold) {
+        const up = () => {
+          handlers.hold(hold, false);
+          b.classList.remove('held');
+        };
+        b.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          b.setPointerCapture(e.pointerId);
+          handlers.hold(hold, true);
+          b.classList.add('held');
+        });
+        b.addEventListener('pointerup', up);
+        b.addEventListener('pointercancel', up);
+      } else if (tap) {
+        b.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          handlers.tap(tap);
+        });
+      } else if (toggle) {
+        let on = false;
+        b.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          on = !on;
+          handlers.hold(toggle, on);
+          b.classList.toggle('held', on);
+        });
+      }
+    }
+    // The prompt is a button too: tapping it does what [E] does.
+    this.promptEl.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      handlers.tap('KeyE');
+    });
 
     root.addEventListener('click', (e) => {
       const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;

@@ -4,6 +4,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import type { App } from '../core/App';
+import { detectDevice } from '../core/device';
 import { OutlinePass, type OutlineParams } from './OutlinePass';
 
 /** Static paper grain + soft vignette, applied in display (sRGB) space. */
@@ -39,6 +40,8 @@ export interface StylizedOptions {
   outline?: Partial<OutlineParams>;
   grain?: number;
   vignette?: number;
+  /** Multisampling of the scene buffer (default 4, or 2 on touch devices). */
+  samples?: number;
 }
 
 export interface StylizedPipeline {
@@ -49,7 +52,11 @@ export interface StylizedPipeline {
 
 /** Render → ink outline → color output → paper grain. Replaces `app.render`. */
 export function createStylizedPipeline(app: App, options: StylizedOptions = {}): StylizedPipeline {
-  const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+  // Half-float needs a GL extension that a few old phones lack: fall back to 8-bit then.
+  const gl = app.renderer.extensions;
+  const halfFloat = gl.has('EXT_color_buffer_half_float') || gl.has('EXT_color_buffer_float');
+  const samples = options.samples ?? (detectDevice().touch ? 2 : 4);
+  const target = new THREE.WebGLRenderTarget(1, 1, { type: halfFloat ? THREE.HalfFloatType : THREE.UnsignedByteType, samples });
   const composer = new EffectComposer(app.renderer, target);
   composer.addPass(new RenderPass(app.scene, app.camera));
 

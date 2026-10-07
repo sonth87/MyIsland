@@ -1,6 +1,6 @@
 import './styles.css';
 import * as THREE from 'three';
-import { App, createDebug, createRng, createStylizedPipeline, DEBUG, ENV, setQuality, SoundScape } from '@g2/engine';
+import { AdaptiveQuality, App, createDebug, detectDevice, createRng, createStylizedPipeline, DEBUG, ENV, setQuality, SoundScape, type Rung } from '@g2/engine';
 import { CAST, type CharacterConfig } from './data/characters';
 import { SADO } from './data/sado';
 import { Environment } from './env/Environment';
@@ -14,13 +14,16 @@ import { createPlanetMeshes } from './planet/planetMesh';
 import { TerrainBuilder } from './planet/terrainBuilder';
 import { buildPropMeshes, layoutProps, spawnDir, type PropMeshes } from './planet/scatter';
 import { Character } from './player/Character';
-import { DETAIL } from './settings/detail';
+import { DETAIL, pixelRatioCap, shadowMapSize } from './settings/detail';
 import { Settings, type DetailLevel } from './settings/Settings';
 import { Hud } from './ui/Hud';
 import { SettingsPanel } from './ui/SettingsPanel';
 
 const cfg = SADO;
 const settings = new Settings();
+const device = detectDevice();
+/** What the adaptive controller has switched off (not the player's own choices). */
+const perf = { shadowsOff: false, outlineOff: false, effectsOff: false };
 const initialDetail = DETAIL[settings.get().detail];
 const QUALITY = { low: 0, medium: 1, high: 2, ultra: 3 } as const;
 setQuality(QUALITY[settings.get().detail]);
@@ -31,7 +34,7 @@ const app = new App({
   fov: 45,
   near: 0.1,
   far: 600,
-  maxPixelRatio: initialDetail.maxPixelRatio,
+  maxPixelRatio: pixelRatioCap(initialDetail, device.touch),
 });
 const pipeline = createStylizedPipeline(app, { outline: { color: PALETTE.outline } });
 
@@ -111,7 +114,7 @@ const env = new Environment(
   settings,
   sun,
   clouds,
-  layout.trees.filter((t) => !t.pine).map((t) => ({ position: t.position, scale: t.scale })),
+  layout.trees.filter((t) => t.species !== 'pine').map((t) => ({ position: t.position, scale: t.scale, tag: t.species })),
   layout.structures.lanterns,
   cfg.seed,
   sound,
@@ -129,6 +132,8 @@ const hud = new Hud(ui, cfg, {
   onSettings: () => panel.toggle(),
   onSwitchCharacter: () => game.switchCharacter(),
   onSound: () => settings.set({ muted: !settings.get().muted }),
+  hold: (code, down) => app.input.holdKey(code, down),
+  tap: (code) => app.input.tapKey(code),
 });
 const panel = new SettingsPanel(ui, settings, {
   hour: () => env.hour(),
@@ -143,9 +148,12 @@ const game = app.add(
 // --- settings → systems
 let detail: DetailLevel = settings.get().detail;
 const terrainBuilder = new TerrainBuilder(cfg);
+// Created further down (needs the rungs); the first subscribe call runs before that.
+let adaptive: AdaptiveQuality | undefined;
 settings.subscribe((s, changed) => {
   if (changed.includes('view')) game.setView(s.view);
-  if (changed.includes('outline')) pipeline.outline.enabled = s.outline;
+  if (changed.includes('outline')) pipeline.outline.enabled = s.outline && !perf.outlineOff;
+  if (changed.includes('adaptive') && adaptive) adaptive.enabled = s.adaptive;
   if (changed.includes('showFps')) hud.showFps(s.showFps);
   if (changed.includes('volume')) sound.setVolume(s.volume);
   if (changed.includes('music')) sound.setMusic(s.music);
@@ -153,15 +161,16 @@ settings.subscribe((s, changed) => {
     sound.setMuted(s.muted);
     hud.setMuted(s.muted);
   }
-  if (changed.includes('shadows')) app.renderer.shadowMap.enabled = s.shadows;
+  if (changed.includes('shadows')) app.renderer.shadowMap.enabled = s.shadows && !perf.shadowsOff;
   if (changed.includes('detail')) {
     const d = DETAIL[s.detail];
-    sun.setShadowMapSize(d.shadowMap);
+    sun.setShadowMapSize(shadowMapSize(d, device.mobile));
     setQuality(QUALITY[s.detail]);
     ENV.uWaterQuality.value = QUALITY[s.detail] / 3;
-    env.particleQuality = d.particles;
-    app.maxPixelRatio = d.maxPixelRatio;
+    env.particleQuality = d.particles * (device.mobile ? 0.7 : 1);
+    app.maxPixelRatio = pixelRatioCap(d, device.touch);
     app.resize();
+    adaptive?.reset();
     if (s.detail !== detail) {
       detail = s.detail;
       hud.toast('Đang dựng lại thế giới…', 4000);
@@ -178,6 +187,55 @@ settings.subscribe((s, changed) => {
     }
   }
 });
+
+// --- automatic quality: shrink the resolution, then switch things off, while the frame rate is poor
+const DETAIL_ORDER: DetailLevel[] = ['ultra', 'high', 'medium', 'low'];
+const rungs: Rung[] = [
+  {
+    id: 'shadows',
+    label: 'tắt bóng đổ',
+    apply: () => {
+      perf.shadowsOff = true;
+      app.renderer.shadowMap.enabled = false;
+    },
+  },
+  {
+    id: 'outline',
+    label: 'tắt viền mực',
+    apply: () => {
+      perf.outlineOff = true;
+      pipeline.outline.enabled = false;
+    },
+  },
+  {
+    id: 'detail',
+    label: 'giảm độ chi tiết',
+    apply: () => {
+      const i = DETAIL_ORDER.indexOf(settings.get().detail);
+      if (i < DETAIL_ORDER.length - 1) settings.set({ detail: DETAIL_ORDER[i + 1] });
+    },
+  },
+  {
+    id: 'effects',
+    label: 'tắt hiệu ứng phụ',
+    apply: () => {
+      perf.effectsOff = true;
+      pipeline.paper.enabled = false;
+    },
+  },
+];
+adaptive = app.add(
+  new AdaptiveQuality(app, rungs, {
+    onChange: (rung) => hud.toast(rung ? `Máy hơi chậm: đã ${rung.label} cho mượt hơn` : 'Máy hơi chậm: đã giảm độ phân giải cho mượt hơn', 3200),
+  }),
+);
+adaptive.enabled = settings.get().adaptive;
+
+// iOS only lets audio start from a finished tap, not from the first touch down.
+for (const ev of ['pointerup', 'touchend', 'click']) window.addEventListener(ev, () => sound.unlock());
+if (device.mobile && matchMedia('(orientation: portrait)').matches) {
+  setTimeout(() => hud.toast('📱 Xoay ngang màn hình để chơi thoải mái hơn', 4200), 2500);
+}
 
 // --- debug (?debug)
 const { gui } = createDebug(app);
@@ -196,7 +254,7 @@ if (gui) {
 }
 
 app.add({
-  update: (dt: number) => wildlife.update(dt, game.focusPoint, env, settings.get().critters),
+  update: (dt: number) => wildlife.update(dt, game.focusPoint, env, settings.get().critters && !perf.effectsOff),
 });
 
 // Handle for automated checks / console tinkering (debug builds only).

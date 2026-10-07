@@ -97,6 +97,21 @@ export class Input {
     return this.keys.has(code);
   }
 
+  /** Presses or releases a key from outside (on-screen buttons). */
+  holdKey(code: string, down: boolean): void {
+    if (down) {
+      if (!this.keys.has(code)) this.pressed.add(code);
+      this.keys.add(code);
+    } else {
+      this.keys.delete(code);
+    }
+  }
+
+  /** A one-frame press from outside (on-screen buttons). */
+  tapKey(code: string): void {
+    this.pressed.add(code);
+  }
+
   /** True only on the frame the key went down. */
   wasPressed(code: string): boolean {
     return this.pressed.has(code);

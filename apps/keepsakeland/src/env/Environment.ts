@@ -1,15 +1,21 @@
 import * as THREE from 'three';
 import { MathUtils } from 'three';
 import {
+  ACTIVITY,
   createRng,
   ENV,
+  Fireflies,
   Leaves,
   Precipitation,
+  SEASON_LEAF_STYLE,
+  SeasonState,
   Sky,
+  SOUND,
   Weather,
   WorldClock,
   type App,
   type LeafSource,
+  type Season,
   type SoundScape,
   type Surface,
 } from '@g2/engine';
@@ -52,13 +58,18 @@ export interface FocusState {
   shadowExtent: number;
 }
 
-/** Day/night, weather and everything that visibly follows from them. */
+const BASE_SKY_AMBIENT = ENV.uSkyAmbient.value.clone();
+const BASE_GROUND_AMBIENT = ENV.uGroundAmbient.value.clone();
+
+/** Day/night, seasons, weather and everything that visibly follows from them. */
 export class Environment {
   readonly clock = new WorldClock();
   readonly weather: Weather;
   readonly sky: Sky;
   readonly precipitation: Precipitation;
   readonly leaves: Leaves;
+  readonly fireflies: Fireflies;
+  readonly season: SeasonState;
   /** Hold to fast-forward time. */
   fastForward = false;
   private readonly fog: THREE.Fog;
@@ -71,6 +82,7 @@ export class Environment {
   private waterCheck = 0;
   private readonly probe = new THREE.Vector3();
   private readonly tangent = new THREE.Vector3();
+  private styledSeason: Season | null = null;
 
   constructor(
     private readonly app: App,
@@ -78,6 +90,7 @@ export class Environment {
     private readonly settings: Settings,
     private readonly sun: Sun,
     private readonly clouds: Clouds,
+    /** Deciduous trees (tagged 'sakura' / 'broadleaf' / 'maple'): what sheds petals and leaves. */
     trees: LeafSource[],
     lanterns: Lantern[],
     seed: string,
@@ -85,10 +98,13 @@ export class Environment {
   ) {
     this.shape = shape;
     const surface: Surface = planetSurface(shape);
+    this.season = new SeasonState(settings.get().season);
     this.weather = new Weather(createRng(`${seed}:weather`), surface);
+    this.weather.setSeason(settings.get().season);
     this.sky = new Sky(shape.radius);
     this.precipitation = new Precipitation(surface, createRng(`${seed}:rain`));
-    this.leaves = new Leaves(surface, trees, createRng(`${seed}:leaves`));
+    this.leaves = new Leaves(surface, trees, createRng(`${seed}:leaves`), { max: 600 });
+    this.fireflies = new Fireflies(surface, createRng(`${seed}:fireflies`), 90, 20);
     this.fog = new THREE.Fog('#c4e8dc', 1000, 2000);
     app.scene.fog = this.fog;
     app.scene.background = null;
@@ -108,12 +124,12 @@ export class Environment {
     );
     this.halos.name = 'lantern-halos';
 
-    app.scene.add(this.sky.group, this.precipitation.group, this.leaves.mesh, this.halos);
+    app.scene.add(this.sky.group, this.precipitation.group, this.leaves.mesh, this.fireflies.points, this.halos);
   }
 
   /** Objects the outline pass must skip. */
   get noOutline(): THREE.Object3D[] {
-    return [...this.sky.noOutline, this.precipitation.group, this.leaves.mesh, this.halos];
+    return [...this.sky.noOutline, this.precipitation.group, this.leaves.mesh, this.fireflies.points, this.halos];
   }
 
   update(dt: number, focus: FocusState): void {
@@ -128,6 +144,18 @@ export class Environment {
     // Fast-forwarding also skips through weather.
     const weatherDt = dt * (this.fastForward ? 8 : 1);
     this.clock.update(dt, focus.point);
+
+    // Seasons: weights glide towards the chosen season; weather, falling leaves and light follow.
+    this.season.set(s.season);
+    this.season.update(dt);
+    this.weather.setSeason(s.season);
+    if (this.styledSeason !== s.season) {
+      this.styledSeason = s.season;
+      this.leaves.setStyle(SEASON_LEAF_STYLE[s.season]);
+    }
+    const sw = this.season.weights;
+    const mood = this.season.current();
+
     this.weather.update(weatherDt, focus.point, s);
     const w = this.weather;
 
@@ -136,7 +164,12 @@ export class Environment {
     ENV.uTime.value = this.time;
     ENV.uWindAxis.value.copy(w.windAxis);
     ENV.uWind.value = w.gust;
-    ENV.uSnow.value = w.snowCover;
+    ENV.uSeasonW.value.copy(sw);
+    // Winter keeps a blanket of snow on the ground and a skin of ice on the water.
+    ENV.uSnow.value = Math.max(w.snowCover, sw.w * 0.9);
+    ENV.uIce.value = Math.max(MathUtils.smoothstep(w.snowCover, 0.35, 0.9) * 0.85, sw.w * 0.6);
+    ENV.uSkyAmbient.value.copy(BASE_SKY_AMBIENT).multiply(mood.ambient);
+    ENV.uGroundAmbient.value.copy(BASE_GROUND_AMBIENT).multiply(mood.ambient);
     ENV.uWet.value = w.wet;
     ENV.uOvercast.value = w.clouds * 0.75 + w.rain * 0.25;
     ENV.uFlash.value = w.flash * 0.6;
@@ -145,6 +178,8 @@ export class Environment {
 
     this.sun.update(this.clock.sunDir, focus.shadowCenter, focus.shadowExtent);
     this.sun.light.castShadow = s.shadows;
+    this.sun.light.color.copy(mood.sun);
+    this.sun.light.intensity = mood.sunIntensity;
 
     const st = this.sky.update({
       camera,
@@ -155,6 +190,7 @@ export class Environment {
       altitude: focus.altitude,
       flash: w.flash,
       time: this.time,
+      mood: { zenith: mood.zenith, horizon: mood.horizon, amount: mood.skyAmount * (1 - focus.altitude) },
     });
 
     // Distance fog in the sky's horizon color: thicker in rain and snow, gone from orbit.
@@ -164,7 +200,7 @@ export class Environment {
     const near = MathUtils.lerp(MathUtils.lerp(30, 6, murk), 900, focus.altitude);
     const far = MathUtils.lerp(MathUtils.lerp(150, 60, murk), 1800, focus.altitude);
     this.fog.near = near;
-    this.fog.far = far;
+    this.fog.far = far / mood.fog;
     this.fog.color.copy(st.horizon);
 
     this.clouds.cover = w.clouds;
@@ -177,6 +213,14 @@ export class Environment {
     this.precipitation.update(dt, focus.point, w, Math.max(st.day, st.twilight * 0.5), grounded);
     this.leaves.enabled = s.leaves;
     this.leaves.update(dt, focus.point, w, grounded);
+    // Fireflies on warm summer nights, low over the ground near the player.
+    const night = 1 - MathUtils.smoothstep(st.day, 0, 0.35);
+    this.fireflies.update(
+      dt,
+      focus.point,
+      night * this.season.value(ACTIVITY.fireflies) * (1 - w.rain) * (1 - w.snow) * (grounded ? 1 : 0),
+      (this.app.renderer.getPixelRatio() * this.app.height) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)),
+    );
     this.updateSound(dt, focus.altitude, st.day);
     // Point size so the halo spans ~2.4 world units at any distance.
     const cam = this.app.camera;
@@ -209,8 +253,9 @@ export class Environment {
       wind: w.gust * (0.4 + 0.6 * ground) + altitude * 0.15,
       rain: Math.max(w.rain, w.snow * 0.15) * (0.3 + 0.7 * ground),
       water: this.waterNear * ground,
-      birds: day * (1 - w.rain) * (1 - w.snow * 0.6) * ground * 0.8,
-      crickets: (1 - day) * (1 - w.rain) * (1 - w.snowCover) * ground,
+      birds: day * (1 - w.rain) * (1 - w.snow * 0.6) * ground * 0.8 * this.season.value(SOUND.birdsong),
+      crickets: (1 - day) * (1 - w.rain) * (1 - w.snowCover) * ground * this.season.value(SOUND.crickets),
+      cicadas: day * (1 - w.rain) * ground * this.season.value(SOUND.cicadas),
     });
     if (w.flash > 0.9 && this.lastFlash <= 0.9) this.sound.thunder(Math.random());
     this.lastFlash = w.flash;

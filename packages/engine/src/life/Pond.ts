@@ -78,6 +78,8 @@ export class Pond {
   private readonly jumps: Jump[] = [];
   private nextJump = 2;
   private time = 0;
+  private readonly padMesh: THREE.InstancedMesh;
+  private readonly flowerMesh: THREE.InstancedMesh;
 
   constructor(
     private readonly surface: Surface,
@@ -127,7 +129,15 @@ export class Pond {
       this.ringUp.push(new THREE.Vector3(0, 1, 0));
       this.rings.setMatrixAt(i, ZERO);
     }
+    this.padMesh = padMesh;
+    this.flowerMesh = flowerMesh;
     this.group.add(padMesh, flowerMesh, this.fish, this.rings);
+  }
+
+  /** Lily pads grow back in spring and die off in winter; lotus flowers bloom in summer. */
+  setSeason(w: { x: number; y: number; z: number; w: number }): void {
+    this.padMesh.visible = w.w < 0.5;
+    this.flowerMesh.visible = w.y > 0.3;
   }
 
   /** Objects without ink outlines. */

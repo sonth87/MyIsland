@@ -73,6 +73,13 @@ const wait = (ms) => page.waitForTimeout(ms);
   await fly('v.valley.village', 50); await wait(5000); await shoot(page, dir, '12-dem');
   await set({ fixedHour: 14, rain: 3, clouds: 4, camera: 'boat' }); await wait(9000); await shoot(page, dir, '13-mua');
   await set({ rain: 0, snow: 3, camera: 'castle' }); await wait(15000); await shoot(page, dir, '14-tuyet');
+  // Four seasons, same view.
+  await set({ rain: 0, snow: 0, fixedHour: 10.5, camera: 'castle' });
+  for (const [i, season] of ['spring', 'summer', 'autumn', 'winter'].entries()) {
+    await set({ season });
+    await wait(season === 'winter' ? 8000 : 6000);
+    await shoot(page, dir, `${15 + i}-mua-${{ spring: 'xuan', summer: 'ha', autumn: 'thu', winter: 'dong' }[season]}`);
+  }
   server.kill();
 }
 

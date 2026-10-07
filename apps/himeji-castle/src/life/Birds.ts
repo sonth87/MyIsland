@@ -71,6 +71,8 @@ export class Birds {
   private readonly flocks: Flock[] = [];
   private readonly sparrows: Sparrow[] = [];
   private readonly all: Bird[] = [];
+  private readonly perFlock = 16;
+  private readonly hidden = new THREE.Matrix4().makeScale(0, 0, 0);
 
   constructor(
     private readonly heightAt: (x: number, z: number) => number,
@@ -81,7 +83,7 @@ export class Birds {
     const parts = birdParts();
     const mat = envMaterial({ vertexColors: true, side: THREE.DoubleSide }, { snow: false, wet: false });
     const flockCount = 3;
-    const perFlock = 16;
+    const perFlock = this.perFlock;
     const sparrowCount = Math.min(28, perches.length);
     const total = flockCount * perFlock + sparrowCount;
     this.body = new THREE.InstancedMesh(parts.body, mat, total);
@@ -143,10 +145,23 @@ export class Birds {
   }
 
   /** `threats`: moving things that scare perched birds away (train, boat). */
-  update(dt: number, threats: THREE.Vector3[], wind: THREE.Vector3): void {
+  update(dt: number, threats: THREE.Vector3[], wind: THREE.Vector3, activity = 1): void {
+    this.group.visible = activity > 0.02;
+    if (!this.group.visible) return;
     for (const f of this.flocks) this.updateFlock(f, dt, wind);
     for (const s of this.sparrows) this.updateSparrow(s, dt, threats);
-    this.all.forEach((b, i) => this.write(b, i, dt));
+    // Fewer birds in autumn, none in winter: the extra ones are folded away to nothing.
+    const flockBirds = this.flocks.length * this.perFlock;
+    const perFlockShown = Math.round(this.perFlock * activity);
+    const sparrowsShown = Math.round(this.sparrows.length * activity);
+    this.all.forEach((b, i) => {
+      const hide = i < flockBirds ? i % this.perFlock >= perFlockShown : i - flockBirds >= sparrowsShown;
+      if (hide) {
+        for (const m of [this.body, this.wingL, this.wingR]) m.setMatrixAt(i, this.hidden);
+      } else {
+        this.write(b, i, dt);
+      }
+    });
     for (const m of [this.body, this.wingL, this.wingR]) m.instanceMatrix.needsUpdate = true;
   }
 

@@ -73,3 +73,13 @@ export const DETAIL: Record<DetailLevel, DetailPreset> = {
     particles: 1.25,
   },
 };
+
+/** Pixel-ratio cap for a preset on this device (dense phone screens need at least 1.25 to stay sharp). */
+export function pixelRatioCap(preset: DetailPreset, touch: boolean): number {
+  return touch ? Math.max(preset.maxPixelRatio, 1.25) : preset.maxPixelRatio;
+}
+
+/** Shadow map size, kept small on phones where fill rate is the limit. */
+export function shadowMapSize(preset: DetailPreset, mobile: boolean): number {
+  return mobile ? Math.min(preset.shadowMap, 1024) : preset.shadowMap;
+}

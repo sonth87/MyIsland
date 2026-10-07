@@ -125,10 +125,14 @@ export class Critters {
     }
   }
 
-  /** `active` 0..1: daylight and dry weather. */
-  update(dt: number, focus: THREE.Vector3, active: number): void {
+  /**
+   * `active` 0..1: daylight and dry weather (the same for every kind), or a value for each
+   * kind (e.g. no butterflies in winter but swallows in spring).
+   */
+  update(dt: number, focus: THREE.Vector3, active: number | Record<CritterKind, number>): void {
     this.time += dt;
-    this.group.visible = active > 0.05;
+    const act = (kind: CritterKind) => (typeof active === 'number' ? active : active[kind]);
+    this.group.visible = typeof active === 'number' ? active > 0.05 : Math.max(active.butterfly, active.dragonfly, active.swallow) > 0.05;
     if (!this.group.visible) return;
     const counts = new Map<CritterKind, number>();
     for (const c of this.critters) {
@@ -148,7 +152,7 @@ export class Critters {
         c.homed = true;
       }
       // Fewer of them in poor light / weather.
-      if (c.index >= Math.round(COUNTS[c.kind] * active)) continue;
+      if (c.index >= Math.round(COUNTS[c.kind] * act(c.kind))) continue;
       this.step(c, dt);
       const i = counts.get(c.kind) ?? 0;
       counts.set(c.kind, i + 1);

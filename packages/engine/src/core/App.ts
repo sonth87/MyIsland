@@ -20,6 +20,8 @@ export interface AppOptions {
   fov?: number;
   near?: number;
   far?: number;
+  /** Hardware anti-aliasing of the default framebuffer. Off by default: the post-processing pipeline has its own. */
+  antialias?: boolean;
 }
 
 /** Max frame delta; prevents huge jumps after the tab was hidden. */
@@ -33,6 +35,8 @@ export class App {
   readonly input: Input;
   readonly fixedStep: number;
   maxPixelRatio: number;
+  /** 0..1 multiplier on the pixel ratio, lowered by the adaptive quality controller when frames are slow. */
+  pixelRatioScale = 1;
   width = 1;
   height = 1;
   /** Seconds since start (frame time, clamped). */
@@ -51,7 +55,7 @@ export class App {
     this.fixedStep = options.fixedStep ?? 1 / 60;
     this.maxPixelRatio = options.maxPixelRatio ?? 2;
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    this.renderer = new THREE.WebGLRenderer({ antialias: options.antialias ?? false, powerPreference: 'high-performance' });
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.domElement.className = 'app-canvas';
@@ -64,6 +68,29 @@ export class App {
     this.render = () => this.renderer.render(this.scene, this.camera);
 
     new ResizeObserver(() => this.resize()).observe(this.container);
+    this.resize();
+
+    // Phones sometimes lose the GL context when memory runs short or the page sleeps: reload to recover.
+    const canvas = this.renderer.domElement;
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      this.stop();
+      this.contextLostHandler();
+    });
+  }
+
+  /** What to do when the graphics context is lost (default: reload the page after a moment). */
+  contextLostHandler: () => void = () => {
+    setTimeout(() => location.reload(), 800);
+  };
+
+  /** Effective device pixel ratio (the device's, capped, then scaled). */
+  get pixelRatio(): number {
+    return Math.min(window.devicePixelRatio, this.maxPixelRatio) * this.pixelRatioScale;
+  }
+
+  setPixelRatioScale(scale: number): void {
+    this.pixelRatioScale = Math.max(0.3, Math.min(1, scale));
     this.resize();
   }
 
@@ -81,7 +108,7 @@ export class App {
   resize(): void {
     this.width = Math.max(1, this.container.clientWidth);
     this.height = Math.max(1, this.container.clientHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.maxPixelRatio));
+    this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.setSize(this.width, this.height);
     this.camera.aspect = this.width / this.height;
     this.camera.updateProjectionMatrix();

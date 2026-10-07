@@ -1,15 +1,22 @@
 import * as THREE from 'three';
 import { MathUtils } from 'three';
 import {
+  ACTIVITY,
   createRng,
   ENV,
+  detectDevice,
+  Fireflies,
   Leaves,
+  SEASON_LEAF_STYLE,
   Precipitation,
   Sky,
+  SOUND,
+  SeasonState,
   Weather,
   WorldClock,
   type App,
   type LeafSource,
+  type Season,
   type SoundScape,
   type Surface,
   type WeatherControls,
@@ -39,7 +46,11 @@ void main() {
   #include <colorspace_fragment>
 }`;
 
+const BASE_SKY_AMBIENT = ENV.uSkyAmbient.value.clone();
+const BASE_GROUND_AMBIENT = ENV.uGroundAmbient.value.clone();
+
 export interface ValleyEnvSettings extends WeatherControls {
+  season: Season;
   timeMode: 'auto' | 'fixed';
   fixedHour: number;
   dayMinutes: number;
@@ -55,8 +66,12 @@ export class ValleyEnvironment {
   readonly sky = new Sky();
   readonly precipitation: Precipitation;
   readonly petals: Leaves;
+  readonly fireflies: Fireflies;
+  readonly season: SeasonState;
   readonly sun: THREE.DirectionalLight;
   fastForward = false;
+  /** Lets the adaptive controller switch shadows off on slow devices. */
+  shadowsAllowed = true;
   /** Draw distance: fog closes in before it. */
   viewDistance = 340;
   private readonly fog = new THREE.Fog('#c4e8dc', 60, 420);
@@ -66,11 +81,14 @@ export class ValleyEnvironment {
   private time = 0;
   private lastFlash = 0;
   private shadowExtent = 0;
+  private styledSeason: Season | null = null;
 
   constructor(
     private readonly app: App,
     private readonly valley: ValleyData,
-    sakura: LeafSource[],
+    initialSeason: Season,
+    /** Deciduous trees (tagged 'sakura' / 'broadleaf' / 'maple'): what sheds petals and leaves. */
+    deciduous: LeafSource[],
     lanterns: THREE.Vector3[],
     private readonly clouds: FlatClouds,
     private readonly sound: SoundScape,
@@ -82,13 +100,14 @@ export class ValleyEnvironment {
     };
     this.weather = new Weather(createRng(`${valley.seed}:weather`), surface);
     this.precipitation = new Precipitation(surface, createRng(`${valley.seed}:rain`));
-    this.petals = new Leaves(surface, sakura, createRng(`${valley.seed}:petals`), {
-      colors: ['#f7c3d2', '#fbd9e3', '#f2a9bf', '#ffffff'],
-      size: [0.09, 0.15],
-      max: 520,
-      baseRate: 9,
+    this.season = new SeasonState(initialSeason);
+    this.weather.setSeason(initialSeason);
+    const lite = detectDevice().mobile;
+    this.petals = new Leaves(surface, deciduous, createRng(`${valley.seed}:petals`), {
+      max: lite ? 420 : 900,
       crown: [1.7, 2.9],
     });
+    this.fireflies = new Fireflies(surface, createRng(`${valley.seed}:fireflies`), lite ? 60 : 120, 26);
     this.sun = new THREE.DirectionalLight('#fff4e2', 2.7);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
@@ -110,11 +129,18 @@ export class ValleyEnvironment {
     );
     app.scene.fog = this.fog;
     app.scene.background = null;
-    app.scene.add(this.sky.group, this.precipitation.group, this.petals.mesh, this.halos, this.sun, this.sun.target);
+    app.scene.add(this.sky.group, this.precipitation.group, this.petals.mesh, this.fireflies.points, this.halos, this.sun, this.sun.target);
+  }
+
+  /** Jumps to a season without the slow fade (used at start-up). */
+  snapSeason(season: Season): void {
+    this.season.snap(season);
+    this.weather.setSeason(season);
+    this.styledSeason = null;
   }
 
   get noOutline(): THREE.Object3D[] {
-    return [...this.sky.noOutline, this.precipitation.group, this.petals.mesh, this.halos];
+    return [...this.sky.noOutline, this.precipitation.group, this.petals.mesh, this.fireflies.points, this.halos];
   }
 
   hour(): number {
@@ -136,6 +162,18 @@ export class ValleyEnvironment {
     this.clock.dayLength = s.dayMinutes * 60;
     this.clock.speed = this.fastForward ? 40 : 1;
     this.clock.update(dt, this.up);
+
+    // Seasons: weights glide towards the chosen season; the weather, falling leaves and light follow.
+    this.season.set(s.season);
+    this.season.update(dt);
+    this.weather.setSeason(s.season);
+    if (this.styledSeason !== s.season) {
+      this.styledSeason = s.season;
+      this.petals.setStyle(SEASON_LEAF_STYLE[s.season]);
+    }
+    const sw = this.season.weights;
+    const mood = this.season.current();
+
     this.weather.update(dt * (this.fastForward ? 8 : 1), focus, s);
     const w = this.weather;
     this.weather.windAt(focus, this.wind);
@@ -145,7 +183,12 @@ export class ValleyEnvironment {
     ENV.uTime.value = this.time;
     ENV.uWindAxis.value.copy(w.windAxis);
     ENV.uWind.value = w.gust;
-    ENV.uSnow.value = w.snowCover;
+    ENV.uSeasonW.value.copy(sw);
+    // Winter keeps a blanket of snow on the ground and a skin of ice on the water.
+    ENV.uSnow.value = Math.max(w.snowCover, sw.w * 0.9);
+    ENV.uIce.value = Math.max(MathUtils.smoothstep(w.snowCover, 0.35, 0.9) * 0.85, sw.w * 0.6);
+    ENV.uSkyAmbient.value.copy(BASE_SKY_AMBIENT).multiply(mood.ambient);
+    ENV.uGroundAmbient.value.copy(BASE_GROUND_AMBIENT).multiply(mood.ambient);
     ENV.uWet.value = w.wet;
     ENV.uOvercast.value = w.clouds * 0.75 + w.rain * 0.25;
     ENV.uFlash.value = w.flash * 0.6;
@@ -155,7 +198,9 @@ export class ValleyEnvironment {
     this.sun.position.copy(focus).addScaledVector(this.clock.sunDir, dist);
     this.sun.target.position.copy(focus);
     this.sun.target.updateMatrixWorld();
-    this.sun.castShadow = s.shadows;
+    this.sun.castShadow = s.shadows && this.shadowsAllowed;
+    this.sun.color.copy(mood.sun);
+    this.sun.intensity = mood.sunIntensity;
     if (Math.abs(shadowExtent - this.shadowExtent) > 2) {
       this.shadowExtent = shadowExtent;
       const cam = this.sun.shadow.camera;
@@ -176,11 +221,12 @@ export class ValleyEnvironment {
       altitude: 0,
       flash: w.flash,
       time: this.time,
+      mood: { zenith: mood.zenith, horizon: mood.horizon, amount: mood.skyAmount },
     });
     // The water reflects the sky.
     ENV.uSkyTint.value.copy(st.horizon).lerp(st.zenith, 0.35);
     const murk = Math.max(w.rain, w.snow * 1.1);
-    this.fog.far = MathUtils.lerp(this.viewDistance * 0.98, Math.min(170, this.viewDistance * 0.6), murk);
+    this.fog.far = MathUtils.lerp(this.viewDistance * 0.98, Math.min(170, this.viewDistance * 0.6), murk) / mood.fog;
     this.fog.near = this.fog.far * MathUtils.lerp(0.28, 0.12, murk);
     this.fog.color.copy(st.horizon);
 
@@ -195,6 +241,14 @@ export class ValleyEnvironment {
     this.precipitation.update(dt, rainCenter, w, Math.max(st.day, st.twilight * 0.5), true);
     this.petals.enabled = s.petals;
     this.petals.update(dt, focus, w, true);
+    // Fireflies on warm summer nights, low over the ground near the viewer.
+    const night = 1 - MathUtils.smoothstep(st.day, 0, 0.35);
+    this.fireflies.update(
+      dt,
+      focus,
+      night * this.season.value(ACTIVITY.fireflies) * (1 - w.rain) * (1 - w.snow),
+      (this.app.renderer.getPixelRatio() * this.app.height) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)),
+    );
     // Point size so the halo spans ~4.5 world units at any distance.
     const cam = this.app.camera;
     this.halos.material.uniforms.uScale.value =
@@ -207,8 +261,9 @@ export class ValleyEnvironment {
       wind: w.gust * (0.5 + 0.5 * ground) + high * 0.25,
       rain: Math.max(w.rain, w.snow * 0.15) * (0.4 + 0.6 * ground),
       water: nearWater * ground,
-      birds: st.day * (1 - w.rain) * (1 - w.snow * 0.6) * (0.4 + 0.6 * ground),
-      crickets: (1 - st.day) * (1 - w.rain) * (1 - w.snowCover) * ground,
+      birds: st.day * (1 - w.rain) * (1 - w.snow * 0.6) * (0.4 + 0.6 * ground) * this.season.value(SOUND.birdsong),
+      crickets: (1 - st.day) * (1 - w.rain) * (1 - w.snowCover) * ground * this.season.value(SOUND.crickets),
+      cicadas: st.day * (1 - w.rain) * ground * this.season.value(SOUND.cicadas),
     });
     if (w.flash > 0.9 && this.lastFlash <= 0.9) this.sound.thunder(Math.random());
     this.lastFlash = w.flash;

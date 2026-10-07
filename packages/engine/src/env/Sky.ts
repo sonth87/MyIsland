@@ -263,9 +263,17 @@ export class Sky {
     altitude: number;
     flash: number;
     time: number;
+    /** Season colours the daytime sky is pulled towards (by `amount`). */
+    mood?: { zenith: THREE.Color; horizon: THREE.Color; amount: number };
   }): SkyState {
-    const { camera, refUp, sunDir, moonDir, overcast, altitude } = params;
+    const { camera, refUp, sunDir, moonDir, overcast, altitude, mood } = params;
     const st = skyState(refUp.dot(sunDir), overcast, this.state);
+    if (mood) {
+      // Only by day, and less under thick cloud: night skies and storm skies stay their own.
+      const k = mood.amount * st.day * (1 - overcast * 0.6);
+      st.zenith.lerp(mood.zenith, k);
+      st.horizon.lerp(mood.horizon, k);
+    }
 
     const u = this.dome.material.uniforms;
     u.uRefUp.value.copy(refUp);

@@ -9,6 +9,8 @@ import {
   ENV,
   formatHour,
   hourIcon,
+  SEASON_ICON,
+  SEASON_LABEL,
   PoseTransition,
   SpatialHash,
   type App,
@@ -273,7 +275,8 @@ export class IslandGame implements System {
 
     const env = w.env;
     const hour = env.hour();
-    w.hud.setClock(`${hourIcon(hour)} ${formatHour(hour)} · ${env.weather.describe()} · ${env.weather.describeWind()}`);
+    const season = w.settings.get().season;
+    w.hud.setClock(`${SEASON_ICON[season]} ${SEASON_LABEL[season]} · ${hourIcon(hour)} ${formatHour(hour)} · ${env.weather.describe()} · ${env.weather.describeWind()}`);
     w.panel.tick();
     if (w.settings.get().showFps) w.hud.tickFps(dt);
   }

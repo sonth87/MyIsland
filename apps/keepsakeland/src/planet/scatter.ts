@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {
   createRng,
   envDepthMaterial,
+  getQuality,
   envMaterial,
   envNormalMaterial,
   lowpoly,
@@ -60,6 +61,8 @@ export interface PropLayout {
   grass: Placed[];
   rice: Placed[];
   flowers: Placed[];
+  /** Fallen leaves under the trees (autumn only). */
+  litter: Placed[];
   colliders: SpatialHash<PlanetCollider>;
 }
 
@@ -201,7 +204,29 @@ export function layoutProps(shape: PlanetShape, cfg: IslandConfig, rng: Rng): Pr
     return p;
   });
 
-  return { structures: built, trees, rocks, bushes, grass, rice, flowers, colliders };
+  // Fallen leaves under deciduous trees (shown only in autumn); a separate random stream keeps the rest unchanged.
+  const lrng = createRng(`${cfg.seed}:litter`);
+  const litter: Placed[] = [];
+  const _t1 = new THREE.Vector3();
+  const _t2 = new THREE.Vector3();
+  const _d = new THREE.Vector3();
+  for (const t of trees) {
+    if (t.species === 'pine') continue;
+    const up = _d.copy(t.position).normalize();
+    anyTangent(up, _t1);
+    _t2.crossVectors(up, _t1);
+    const count = Math.round(4 + lrng() * 4 * t.scale);
+    for (let k = 0; k < count; k++) {
+      const a = lrng() * Math.PI * 2;
+      const r = (0.5 + lrng() * 1.8) * t.scale * TREE_SIZE * 1.6;
+      const dir = t.position.clone().addScaledVector(_t1, Math.cos(a) * r).addScaledVector(_t2, Math.sin(a) * r).normalize();
+      if (shape.isWater(dir, 0.25)) continue;
+      const sc = 0.55 + lrng() * 0.45;
+      litter.push({ matrix: surfaceMatrix(dir, shape.heightAt(dir), lrng() * 6.28, new THREE.Vector3(sc, 1, sc), new THREE.Matrix4(), -0.03), tint: tint(0.85, 1.15) });
+    }
+  }
+
+  return { structures: built, trees, rocks, bushes, grass, rice, flowers, litter, colliders };
 }
 
 function instanced(geometry: THREE.BufferGeometry, material: THREE.Material, items: Placed[]): THREE.InstancedMesh {
@@ -238,10 +263,10 @@ export function buildPropMeshes(layout: PropLayout, detail: DetailPreset, out: P
   const d = detail.props;
   out.solid.add(layout.structures.mesh, layout.structures.glow);
 
-  const treeMat = envMaterial({ vertexColors: true }, { sway: 'tree' });
-  const treeDepth = envDepthMaterial({ sway: 'tree' });
-  // Ink outlines are drawn from a normal pass; give it the same sway so lines follow the trees.
-  const treeOutline = envNormalMaterial({ sway: 'tree' });
+  const treeMat = envMaterial({ vertexColors: true }, { sway: 'tree', season: true });
+  const treeDepth = envDepthMaterial({ sway: 'tree', season: true });
+  // Ink outlines are drawn from a normal pass; give it the same sway (and shed leaves) so lines follow the trees.
+  const treeOutline = envNormalMaterial({ sway: 'tree', season: true });
   const shapes = treeShapes();
   for (const sp of TREE_SPECIES) {
     shapes.get(sp)!.forEach((shape, vi) => {
@@ -259,20 +284,33 @@ export function buildPropMeshes(layout: PropLayout, detail: DetailPreset, out: P
 
   const propMat = envMaterial({ vertexColors: true });
   const rockMesh = instanced(lowpoly.rock(PALETTE.rock, d), propMat, layout.rocks);
-  const bushMesh = instanced(lowpoly.bush(PALETTE.bush, d), envMaterial({ vertexColors: true }, { sway: 'grass', swayScale: 0.12 }), layout.bushes);
-  bushMesh.userData.outlineMaterial = envNormalMaterial({ sway: 'grass', swayScale: 0.12 });
+  const K = lowpoly.SEASON_KIND;
+  const kind = lowpoly.seasonKind;
+  const bushMesh = instanced(
+    kind(lowpoly.bush(PALETTE.bush, d), K.ground),
+    envMaterial({ vertexColors: true }, { sway: 'grass', swayScale: 0.12, season: true }),
+    layout.bushes,
+  );
+  bushMesh.userData.outlineMaterial = envNormalMaterial({ sway: 'grass', swayScale: 0.12, season: true });
   for (const m of [rockMesh, bushMesh]) {
     m.castShadow = true;
     m.receiveShadow = true;
     out.solid.add(m);
   }
 
-  const windMat = envMaterial({ vertexColors: true }, { sway: 'grass', push: true });
+  const windMat = envMaterial({ vertexColors: true }, { sway: 'grass', push: true, season: true });
   const take = <T>(list: T[], fraction: number) => list.slice(0, Math.round(list.length * fraction));
+  const leaf = new THREE.CircleGeometry(0.17, 5).rotateX(-Math.PI / 2).scale(1, 1, 1.5);
   const soft = [
-    instanced(lowpoly.grassTuft(PALETTE.leafLight), windMat, take(layout.grass, detail.grass)),
-    instanced(lowpoly.grassTuft(PALETTE.rice, 0.75, 5), windMat, take(layout.rice, detail.rice)),
-    instanced(lowpoly.flower('#ffffff', '#ffffff'), windMat, take(layout.flowers, detail.flowers)),
+    instanced(kind(lowpoly.grassTuft(PALETTE.leafLight), K.tuft), windMat, take(layout.grass, detail.grass)),
+    instanced(kind(lowpoly.grassTuft(PALETTE.rice, 0.75, 5), K.crop), windMat, take(layout.rice, detail.rice)),
+    instanced(kind(lowpoly.flower('#ffffff', '#ffffff'), K.flower), windMat, take(layout.flowers, detail.flowers)),
+    // Fallen leaves: only in autumn (the shader hides them the rest of the year).
+    instanced(
+      kind(lowpoly.paint(leaf, '#c8843a'), K.litter),
+      envMaterial({ vertexColors: true, side: THREE.DoubleSide }, { season: true, snow: false }),
+      take(layout.litter, detail.grass),
+    ),
   ];
   for (const m of soft) {
     m.receiveShadow = true;
@@ -288,10 +326,15 @@ export function spawnDir(shape: PlanetShape, cfg: IslandConfig): THREE.Vector3 {
   return dir;
 }
 
-let shapeCache: Map<TreeSpecies, TreeVariant[]> | null = null;
+// Tree shapes depend on the model quality, so they are cached per quality level.
+const shapeCache = new Map<number, Map<TreeSpecies, TreeVariant[]>>();
 function treeShapes(): Map<TreeSpecies, TreeVariant[]> {
-  if (shapeCache) return shapeCache;
-  const rng = createRng('isle-trees');
-  shapeCache = new Map(TREE_SPECIES.map((sp) => [sp, treeVariants(sp, rng, TREE_VARIANTS)]));
-  return shapeCache;
+  const quality = getQuality();
+  let shapes = shapeCache.get(quality);
+  if (!shapes) {
+    const rng = createRng('isle-trees');
+    shapes = new Map(TREE_SPECIES.map((sp) => [sp, treeVariants(sp, rng, TREE_VARIANTS)]));
+    shapeCache.set(quality, shapes);
+  }
+  return shapes;
 }

@@ -30,6 +30,11 @@ export const LINES = {
   snow: ['Tuyết rơi kìa! ❄️', '寒いね — Lạnh quá!'],
   night: ['Đèn lồng sáng rồi.', 'おやすみなさい — Chúc ngủ ngon.', 'Trăng hôm nay tròn quá.'],
   train: ['Tàu đến rồi! 🚂', '電車が来たよ！'],
+  /** Remarks about the season, mixed in with the others. */
+  spring: ['Hoa anh đào nở rồi kìa! 🌸', '春だね — Xuân đến rồi!', 'Ruộng đang cấy mạ, nước trong veo.', 'Chim én về rồi đấy.'],
+  summer: ['Nóng quá, ra sông hóng mát thôi.', '夏だ！— Mùa hè rồi!', 'Ve kêu inh ỏi cả buổi chiều.', 'Tối nay có đom đóm ven sông đó.'],
+  autumn: ['Lá phong đỏ hết rồi kìa! 🍁', '紅葉がきれい — Lá đỏ đẹp quá.', 'Lúa chín vàng, sắp gặt rồi.', 'Gió thu mát thật.'],
+  winter: ['Tuyết phủ trắng cả thung lũng. ❄️', '雪だ！— Tuyết rơi rồi!', 'Chim chóc đi đâu hết rồi nhỉ?', 'Nhớ mặc áo ấm nhé.'],
 };
 
 function outfit(rng: Rng): Outfit {

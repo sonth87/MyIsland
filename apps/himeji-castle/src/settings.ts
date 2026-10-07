@@ -1,4 +1,4 @@
-import type { Level } from '@g2/engine';
+import { detectDevice, type Level, type Season } from '@g2/engine';
 import type { CamMode } from './cameras/CameraDirector';
 import type { DetailLevel, ViewLevel } from './detail';
 import type { ValleyEnvSettings } from './env/ValleyEnvironment';
@@ -15,11 +15,19 @@ export interface ValleySettings extends ValleyEnvSettings {
   detail: DetailLevel;
   view: ViewLevel;
   critters: boolean;
+  /** Lower the graphics automatically when the frame rate drops. */
+  adaptive: boolean;
 }
+
+/** Sensible first-run graphics for this device: phones start lighter than desktops. */
+const device = detectDevice();
+const START_DETAIL: DetailLevel = device.tier === 'high' ? 'high' : device.tier === 'medium' ? 'medium' : 'low';
+const START_VIEW: ViewLevel = device.tier === 'high' ? 'far' : device.tier === 'medium' ? 'medium' : 'near';
 
 export const DEFAULTS: ValleySettings = {
   camera: 'overview',
   timeMode: 'auto',
+  season: 'spring',
   fixedHour: 10,
   dayMinutes: 6,
   wind: 'auto',
@@ -29,16 +37,17 @@ export const DEFAULTS: ValleySettings = {
   rain: 'auto',
   snow: 'auto',
   petals: true,
-  shadows: true,
+  shadows: device.tier !== 'low',
   trainSpeed: 0.5,
   volume: 0.7,
   music: true,
   muted: false,
   outline: true,
   showFps: false,
-  detail: 'high',
-  view: 'far',
+  detail: START_DETAIL,
+  view: START_VIEW,
   critters: true,
+  adaptive: true,
 };
 
 const KEY = 'himeji-castle:settings:v1';
@@ -83,6 +92,10 @@ function load(): Partial<ValleySettings> {
     for (const k of Object.keys(DEFAULTS) as Array<keyof ValleySettings>) {
       if (!(k in parsed)) continue;
       const v = parsed[k];
+      if (k === 'season') {
+        if (['spring', 'summer', 'autumn', 'winter'].includes(v as string)) out[k] = v as Season;
+        continue;
+      }
       if (LEVEL_KEYS.has(k) ? v === 'auto' || [0, 1, 2, 3, 4].includes(v as number) : typeof v === typeof DEFAULTS[k]) out[k] = v;
     }
     return out as Partial<ValleySettings>;

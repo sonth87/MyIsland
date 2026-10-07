@@ -16,6 +16,10 @@ export const ENV = {
   /** Current wind strength incl. gusts, 0..~1.2. */
   uWind: { value: 0.3 },
   uSnow: { value: 0 },
+  /** How frozen the water looks, 0..1 (snow settled on it, or winter). */
+  uIce: { value: 0 },
+  /** Season weights: spring, summer, autumn, winter (sum 1). */
+  uSeasonW: { value: new THREE.Vector4(1, 0, 0, 0) },
   uWet: { value: 0 },
   uOvercast: { value: 0 },
   uFlash: { value: 0 },
@@ -80,9 +84,131 @@ export interface EnvOptions {
    * foam along the shore and drifting light patches.
    */
   water?: boolean;
+  /**
+   * Reacts to the seasons: needs the per-vertex `aSeason` / `aCenter` attributes
+   * (see `lowpoly.seasonKind`). Colours change, leaves are shed, crops grow and are cut.
+   */
+  season?: boolean;
 }
 
-const VERTEX_HEADER = UP_MACRO + /* glsl */ `
+
+const glslColor = (hex: string) => {
+  const c = new THREE.Color(hex);
+  return `vec3(${c.r.toFixed(4)}, ${c.g.toFixed(4)}, ${c.b.toFixed(4)})`;
+};
+
+/** Season colours (linear) baked into the shader source. */
+const SEASON_GLSL = /* glsl */ `
+#ifdef ENV_SEASON
+attribute float aSeason;
+attribute vec3 aCenter;
+uniform vec4 uSeasonW;
+
+const vec3 SE_YELLOW = ${glslColor('#e8c13c')};
+const vec3 SE_ORANGE = ${glslColor('#e07b2e')};
+const vec3 SE_RED = ${glslColor('#c63a2a')};
+const vec3 SE_BROWN = ${glslColor('#a8703a')};
+const vec3 SE_LEAF_SPRING = ${glslColor('#8fd35a')};
+const vec3 SE_LEAF_SUMMER = ${glslColor('#3f9a3a')};
+const vec3 SE_LEAF_DRY = ${glslColor('#9a7a52')};
+const vec3 SE_GRASS_AUTUMN = ${glslColor('#c9a844')};
+const vec3 SE_GRASS_WINTER = ${glslColor('#c9d2d6')};
+const vec3 SE_GROVE_GRASS = ${glslColor('#6bb04a')};
+const vec3 SE_PADDY_SPRING = ${glslColor('#9bbf62')};
+const vec3 SE_PADDY_SUMMER = ${glslColor('#6cb04a')};
+const vec3 SE_PADDY_WINTER = ${glslColor('#d4cfc0')};
+const vec3 SE_CROP_SPRING = ${glslColor('#80d058')};
+const vec3 SE_CROP_SUMMER = ${glslColor('#4fae3e')};
+const vec3 SE_CROP_WINTER = ${glslColor('#cdb97c')};
+
+float seHash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+
+/** A number in 0..1 that is fixed for each tree / plant (from where its instance sits). */
+float seRandom(float salt) {
+  #ifdef USE_INSTANCING
+    vec3 o = (modelMatrix * instanceMatrix)[3].xyz;
+  #else
+    vec3 o = modelMatrix[3].xyz;
+  #endif
+  return seHash(o * (1.0 + salt * 0.37) + salt * 3.1);
+}
+
+/** 1 while rnd is below level, easing to 0 just above it (so things go one by one, not all at once). */
+float seKeep(float rnd, float level) { return 1.0 - smoothstep(level - 0.12, level, rnd * 0.8 + 0.1); }
+
+vec3 seAutumn(float r, float lum, float redBias) {
+  r = clamp(r + redBias, 0.0, 0.999);
+  vec3 col = r < 0.27 ? SE_YELLOW : (r < 0.58 ? SE_ORANGE : (r < 0.93 ? SE_RED : SE_BROWN));
+  return col * (0.62 + lum * 1.35);
+}
+
+vec3 seGround(vec3 c, float lum) {
+  vec4 w = uSeasonW;
+  vec3 sp = c * vec3(1.06, 1.1, 0.9);
+  vec3 su = c * vec3(0.8, 0.98, 0.76);
+  vec3 au = mix(c, SE_GRASS_AUTUMN * (0.5 + lum * 1.5), 0.82);
+  vec3 wi = mix(c, SE_GRASS_WINTER * (0.7 + lum * 0.6), 0.9);
+  return sp * w.x + su * w.y + au * w.z + wi * w.w;
+}
+
+/** The colour of a tagged vertex in the current season. */
+vec3 seColor(float kind, vec3 c, float rnd) {
+  vec4 w = uSeasonW;
+  float lum = dot(c, vec3(0.30, 0.59, 0.11));
+  int k = int(kind + 0.5);
+  if (k == 1 || k == 7) return seGround(c, lum);
+  if (k == 2) {
+    vec3 sp = SE_LEAF_SPRING * (0.55 + lum * 1.5);
+    vec3 su = SE_LEAF_SUMMER * (0.5 + lum * 1.5);
+    vec3 au = seAutumn(rnd, lum, 0.0);
+    vec3 wi = SE_LEAF_DRY * (0.6 + lum);
+    return sp * w.x + su * w.y + au * w.z + wi * w.w;
+  }
+  if (k == 3) {
+    vec3 su = SE_LEAF_SUMMER * (0.5 + lum * 0.9);
+    vec3 au = seAutumn(rnd, lum * 0.8, 0.3);
+    vec3 wi = SE_LEAF_DRY * (0.6 + lum);
+    return c * w.x + su * w.y + au * w.z + wi * w.w;
+  }
+  if (k == 11) {
+    vec3 sp = mix(SE_LEAF_SPRING, SE_RED, 0.28) * (0.55 + lum * 1.2);
+    vec3 su = mix(SE_LEAF_SUMMER, SE_BROWN, 0.12) * (0.5 + lum * 1.2);
+    vec3 au = mix(SE_RED, SE_ORANGE, 0.55 * rnd) * (0.75 + lum * 0.9);
+    vec3 wi = SE_LEAF_DRY * (0.6 + lum);
+    return sp * w.x + su * w.y + au * w.z + wi * w.w;
+  }
+  if (k == 4) return c * (vec3(1.05, 1.1, 1.0) * w.x + vec3(1.0) * w.y + vec3(0.96, 0.95, 0.9) * w.z + vec3(0.82, 0.9, 0.96) * w.w);
+  if (k == 5) {
+    float v = 0.8 + c.r * 0.5;
+    return SE_PADDY_SPRING * v * w.x + SE_PADDY_SUMMER * v * w.y + c * w.z + SE_PADDY_WINTER * w.w;
+  }
+  if (k == 6) {
+    float v = 0.85 + lum * 0.5;
+    return SE_CROP_SPRING * v * w.x + SE_CROP_SUMMER * v * w.y + c * w.z + SE_CROP_WINTER * v * w.w;
+  }
+  if (k == 9) return seAutumn(rnd, 0.42, 0.0);
+  if (k == 10) return c * w.x + seGround(SE_GROVE_GRASS, 0.32) * (1.0 - w.x);
+  return c;
+}
+
+/** Shape changes: leaves are shed towards their centre, crops grow, grass dies back. */
+vec3 seShape(float kind, vec3 p, float rnd) {
+  vec4 w = uSeasonW;
+  int k = int(kind + 0.5);
+  if (k == 2 || k == 3 || k == 11) {
+    float shed = w.z * 0.3 + w.w * 1.05;
+    return aCenter + (p - aCenter) * seKeep(rnd, 1.0 - shed);
+  }
+  if (k == 7) return p * (1.0 - w.w * (0.7 + 0.2 * rnd) - w.z * 0.08);
+  if (k == 6) return p * dot(w, vec4(0.55, 0.9, 1.0, 0.12));
+  if (k == 8) return p * seKeep(rnd, dot(w, vec4(1.0, 1.0, 0.3, 0.0)));
+  if (k == 9) return p * seKeep(rnd, w.z);
+  return p;
+}
+#endif
+`;
+
+const VERTEX_HEADER = UP_MACRO + SEASON_GLSL + /* glsl */ `
 uniform float uTime;
 uniform vec3 uWindAxis;
 uniform float uWind;
@@ -98,6 +224,9 @@ varying vec3 vEnvWorld;
 
 const SWAY_VERTEX = /* glsl */ `
 #include <begin_vertex>
+#ifdef ENV_SEASON
+  transformed = seShape(aSeason, transformed, seRandom(0.0));
+#endif
 #ifdef ENV_WATER
 {
   // Gentle swell: a few crossing sine waves, damped near the shore, stronger with quality.
@@ -168,6 +297,13 @@ const SWAY_VERTEX = /* glsl */ `
 #endif
 `;
 
+const COLOR_VERTEX = /* glsl */ `
+#include <color_vertex>
+#if defined(ENV_SEASON) && defined(USE_COLOR)
+  vColor.rgb = seColor(aSeason, vColor.rgb, seRandom(1.0));
+#endif
+`;
+
 const WORLD_VERTEX = /* glsl */ `
 #include <project_vertex>
 {
@@ -186,6 +322,7 @@ const FRAGMENT_HEADER = UP_MACRO + /* glsl */ `
 uniform vec3 uSunDir;
 uniform vec3 uMoonDir;
 uniform float uSnow;
+uniform float uIce;
 uniform float uWet;
 uniform float uOvercast;
 uniform float uFlash;
@@ -307,7 +444,7 @@ float envFacing = dot(envWN, envUp);
   diffuseColor.rgb *= 1.0 - 0.28 * uWet * smoothstep(0.2, 0.7, envFacing);
 #endif
 #ifdef ENV_ICE
-  diffuseColor.rgb = mix(diffuseColor.rgb, uIceColor, smoothstep(0.35, 0.9, uSnow) * 0.85);
+  diffuseColor.rgb = mix(diffuseColor.rgb, uIceColor, uIce);
 #endif
 #ifdef ENV_GLOW
   totalEmissiveRadiance += uGlowColor * (1.0 - smoothstep(-0.05, 0.18, envSunH)) * 1.4;
@@ -345,6 +482,7 @@ function defines(o: EnvOptions): Record<string, string | number> {
   if (o.ice) d.ENV_ICE = '';
   if (o.glow) d.ENV_GLOW = '';
   if (o.water) d.ENV_WATER = '';
+  if (o.season) d.ENV_SEASON = '';
   return d;
 }
 
@@ -355,7 +493,10 @@ function bindUniforms(shader: THREE.WebGLProgramParametersWithUniforms): void {
 function patchVertex(shader: THREE.WebGLProgramParametersWithUniforms): void {
   shader.vertexShader =
     VERTEX_HEADER +
-    shader.vertexShader.replace('#include <begin_vertex>', SWAY_VERTEX).replace('#include <project_vertex>', WORLD_VERTEX);
+    shader.vertexShader
+      .replace('#include <color_vertex>', COLOR_VERTEX)
+      .replace('#include <begin_vertex>', SWAY_VERTEX)
+      .replace('#include <project_vertex>', WORLD_VERTEX);
 }
 
 /** Makes a toon material respond to the shared environment (sun/moon, weather, wind). */

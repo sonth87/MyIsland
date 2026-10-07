@@ -15,6 +15,7 @@ export interface TerrainResponse {
   position: Float32Array;
   normal: Float32Array;
   color: Float32Array;
+  season: Float32Array;
   index: Uint32Array | null;
 }
 
@@ -24,8 +25,8 @@ self.onmessage = (e: MessageEvent<TerrainRequest>) => {
   const geo = buildPlanetGeometry(new PlanetShape(cfg), resolution, smooth);
   const arr = (name: string) => geo.getAttribute(name).array as Float32Array;
   const index = geo.index ? Uint32Array.from(geo.index.array) : null;
-  const res: TerrainResponse = { id, position: arr('position'), normal: arr('normal'), color: arr('color'), index };
-  const transfer: Transferable[] = [res.position.buffer, res.normal.buffer, res.color.buffer];
+  const res: TerrainResponse = { id, position: arr('position'), normal: arr('normal'), color: arr('color'), season: arr('aSeason'), index };
+  const transfer: Transferable[] = [res.position.buffer, res.normal.buffer, res.color.buffer, res.season.buffer];
   if (index) transfer.push(index.buffer);
   (self as unknown as DedicatedWorkerGlobalScope).postMessage(res, transfer);
 };

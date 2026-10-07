@@ -1,4 +1,4 @@
-import { LEVEL_NAMES } from '@g2/engine';
+import { detectDevice, LEVEL_NAMES, SEASONS, SEASON_ICON, SEASON_LABEL } from '@g2/engine';
 import { CAM_MODES, type CamMode } from '../cameras/CameraDirector';
 import { DETAIL, VIEW, type DetailLevel, type ViewLevel } from '../detail';
 import { WEATHER_PRESETS, type Settings, type ValleySettings } from '../settings';
@@ -26,6 +26,11 @@ export interface UiHooks {
   whistle(): void;
   newSeed(seed: string | null): void;
   seed: string;
+  /** On-screen buttons: hold / release a key, or press it once. */
+  hold(code: string, down: boolean): void;
+  tap(code: string): void;
+  /** Switch to the next camera view. */
+  cycleCamera(): void;
   /** Named spots the camera can jump to. */
   places: Array<{ label: string; go(): void }>;
 }
@@ -56,6 +61,9 @@ export class Ui {
     private readonly hooks: UiHooks,
   ) {
     this.root = root;
+    const device = detectDevice();
+    root.classList.toggle('touch', device.touch);
+    root.classList.toggle('no-fullscreen', !device.fullscreen);
     root.innerHTML = `
       <div class="frame"></div>
       <div class="tunnel"></div>
@@ -70,6 +78,23 @@ export class Ui {
         <div class="g-bar"><i></i></div>
       </div>
       <div class="bubbles"></div>
+      <button class="card cam-cycle" data-cycle aria-label="Đổi góc nhìn">🎥</button>
+      <div class="pads">
+        <div class="pad pad-driver">
+          <button data-hold="KeyW"><b>＋</b><small>Ga</small></button>
+          <button data-hold="KeyS"><b>－</b><small>Giảm ga</small></button>
+          <button data-hold="Space" class="danger"><b>⛔</b><small>Phanh</small></button>
+          <button data-tap="KeyH"><b>📯</b><small>Còi</small></button>
+        </div>
+        <div class="pad pad-fly">
+          <button data-hold="KeyE"><b>▲</b><small>Lên</small></button>
+          <button data-hold="KeyQ"><b>▼</b><small>Xuống</small></button>
+        </div>
+        <div class="pad pad-bridges">
+          <button data-tap="ArrowLeft"><b>◀</b><small>Cầu trước</small></button>
+          <button data-tap="ArrowRight"><b>▶</b><small>Cầu sau</small></button>
+        </div>
+      </div>
       <div class="hintbar"></div>
       <div class="toast card"></div>
       <div class="fps"></div>
@@ -79,6 +104,8 @@ export class Ui {
           <div class="grid cams"></div>
           <h3>Điểm đến</h3>
           <div class="row" data-places></div>
+          <h3>Mùa</h3>
+          <div class="grid seasons" data-seg="season"></div>
           <h3>Thời gian</h3>
           <div class="row" data-time></div>
           <label class="slider"><span>Giờ <b data-hour-label></b></span><input type="range" min="0" max="24" step="0.05" data-hour /></label>
@@ -103,6 +130,7 @@ export class Ui {
           <label class="check"><input type="checkbox" data-check="outline" /> Viền mực</label>
           <label class="check"><input type="checkbox" data-check="critters" /> Bướm, chuồn chuồn, chim én</label>
           <label class="check"><input type="checkbox" data-check="shadows" /> Bóng đổ</label>
+          <label class="check"><input type="checkbox" data-check="adaptive" /> Tự giảm đồ hoạ khi máy chậm</label>
           <label class="check"><input type="checkbox" data-check="petals" /> Cánh hoa anh đào bay</label>
           <label class="check"><input type="checkbox" data-check="showFps" /> Hiện FPS</label>
           <p class="status"></p>
@@ -180,6 +208,14 @@ export class Ui {
         row.appendChild(b);
       }
     }
+    const seasonRow = root.querySelector('[data-seg="season"]')!;
+    for (const k of SEASONS) {
+      const b = document.createElement('button');
+      b.dataset.value = k;
+      b.innerHTML = `${SEASON_ICON[k]} ${SEASON_LABEL[k]}`;
+      b.addEventListener('click', () => settings.set({ season: k }));
+      seasonRow.appendChild(b);
+    }
     const hourInput = root.querySelector<HTMLInputElement>('[data-hour]')!;
     hourInput.addEventListener('input', () => {
       this.draggingHour = true;
@@ -193,6 +229,26 @@ export class Ui {
       input.addEventListener('change', () => settings.set({ [input.dataset.check!]: input.checked } as Partial<ValleySettings>));
     }
     root.querySelector('[data-toggle]')!.addEventListener('click', () => this.togglePanel());
+    root.querySelector('[data-cycle]')!.addEventListener('click', () => hooks.cycleCamera());
+    // On-screen pedals / buttons: hold to keep a key down, tap to press it once.
+    for (const b of root.querySelectorAll<HTMLButtonElement>('[data-hold], [data-tap]')) {
+      const hold = b.dataset.hold;
+      const tap = b.dataset.tap;
+      b.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        b.setPointerCapture(e.pointerId);
+        b.classList.add('down');
+        if (hold) hooks.hold(hold, true);
+        if (tap) hooks.tap(tap);
+      });
+      const up = () => {
+        b.classList.remove('down');
+        if (hold) hooks.hold(hold, false);
+      };
+      b.addEventListener('pointerup', up);
+      b.addEventListener('pointercancel', up);
+      b.addEventListener('lostpointercapture', up);
+    }
     root.querySelector('[data-whistle]')!.addEventListener('click', () => hooks.whistle());
     const seedInput = root.querySelector<HTMLInputElement>('[data-seed]')!;
     root.querySelector('[data-apply]')!.addEventListener('click', () => hooks.newSeed(seedInput.value.trim() || null));
@@ -309,7 +365,7 @@ export class Ui {
       const on = (Object.keys(p.patch) as Array<'wind' | 'clouds' | 'rain' | 'snow'>).every((k) => s[k] === p.patch[k]);
       b.classList.toggle('on', on && (p.id === 'auto' || s.rain !== 'auto'));
     }
-    for (const key of ['wind', 'detail', 'view'] as const) {
+    for (const key of ['wind', 'detail', 'view', 'season'] as const) {
       for (const b of this.root.querySelectorAll<HTMLElement>(`[data-seg="${key}"] button`)) b.classList.toggle('on', b.dataset.value === String(s[key]));
     }
     this.root.querySelector('[data-detail-note]')!.textContent = DETAIL[s.detail].description;
