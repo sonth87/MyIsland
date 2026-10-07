@@ -78,19 +78,20 @@ function samplePoints(
   rng: Rng,
   count: number,
   accept: (c: Candidate) => boolean,
-  spacing = 0,
+  spacing: number | ((c: Candidate) => number) = 0,
   occupied?: SpatialHash<true>,
 ): Candidate[] {
   const out: Candidate[] = [];
-  const attempts = count * 12;
+  const attempts = count * 16;
   for (let i = 0; i < attempts && out.length < count; i++) {
     const dir = randomDir(rng);
     const sample = shape.sample(dir);
     const c = { dir, sample };
     if (!accept(c)) continue;
-    if (spacing > 0 && occupied) {
+    const reqSpacing = typeof spacing === 'function' ? spacing(c) : spacing;
+    if (reqSpacing > 0 && occupied) {
       const p = dir.clone().multiplyScalar(sample.height);
-      if (occupied.any(p, spacing)) continue;
+      if (occupied.any(p, reqSpacing)) continue;
       occupied.insert(p, true);
     }
     out.push(c);
@@ -121,15 +122,20 @@ export function layoutProps(shape: PlanetShape, cfg: IslandConfig, rng: Rng): Pr
   const trees = samplePoints(
     shape,
     rng,
-    520,
+    950,
     (c) => {
       const w = c.sample.weights;
-      if (!onLand(c, 0.55) || w.rice > 0.15 || w.village > 0.6 || w.lake > 0.5) return false;
-      if (shape.slopeAt(c.dir) > 0.9) return false;
-      const forest = shape.detail(c.dir, 2.2) + w.forest * 1.3 + w.mountain * 0.35;
-      return forest > 0.1 || rng() < 0.12;
+      if (!onLand(c, 0.5) || w.rice > 0.16 || w.village > 0.55 || w.lake > 0.45) return false;
+      if (shape.slopeAt(c.dir) > 0.95) return false;
+      const forest = shape.detail(c.dir, 2.2) + w.forest * 1.4 + w.mountain * 0.35;
+      return forest > 0.05 || rng() < 0.2;
     },
-    1.7,
+    (c) => {
+      const w = c.sample.weights;
+      const forestFactor = Math.min(1, Math.max(0, w.forest * 1.5 + shape.detail(c.dir, 2.2) * 0.5));
+      // In forest: closer together (~1.15m - 1.25m); outside forest: more open (~1.7m)
+      return 1.15 + (1 - forestFactor) * 0.55;
+    },
     occupied,
   ).map((t): TreeInstance => {
     const h = t.sample.height - shape.radius;
@@ -147,7 +153,7 @@ export function layoutProps(shape: PlanetShape, cfg: IslandConfig, rng: Rng): Pr
     const scale = (0.55 + rng() ** 0.8 * 0.8) * (pine ? 1.1 : 1);
     const lean = new THREE.Vector3(1 + (rng() - 0.5) * 0.2, 0.85 + rng() * 0.35, 1 + (rng() - 0.5) * 0.2).multiplyScalar(scale * TREE_SIZE);
     const matrix = surfaceMatrix(t.dir, t.sample.height, rng() * Math.PI * 2, lean);
-    addCollider(t.dir, 0.32 * scale, 3 * scale, (pine ? 0.6 : 0.85) * scale);
+    addCollider(t.dir, 0.28 * scale, 3 * scale, (pine ? 0.55 : 0.75) * scale);
     return {
       position: new THREE.Vector3().setFromMatrixPosition(matrix),
       matrix,

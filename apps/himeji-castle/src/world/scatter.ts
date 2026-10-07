@@ -282,25 +282,28 @@ export function layoutValley(v: ValleyData): ValleyLayout {
     });
     return !near;
   };
-  // Groves first: sakura close together.
+  // Groves: sakura around castle (unchanged) and hanami park.
   for (const g of v.groves) {
+    const isCastle = g.inner > 0;
     const area = Math.PI * (g.outer * g.outer - g.inner * g.inner);
-    for (let i = 0; i < area / 7; i++) {
+    const div = isCastle ? 7 : 6;
+    const spacing = isCastle ? 5.2 : 4.6;
+    for (let i = 0; i < area / div; i++) {
       const a = rng() * Math.PI * 2;
       const r = Math.sqrt(randRange(rng, (g.inner / g.outer) ** 2, 1)) * g.outer;
       const x = g.center.x + Math.cos(a) * r;
       const z = g.center.z + Math.sin(a) * r;
-      if (!okTree(x, z, 5.2)) continue;
+      if (!okTree(x, z, spacing)) continue;
       // Keep the park paths open.
       if (g.inner === 0 && Math.abs(Math.hypot((x - g.center.x) / 14, (z - g.center.z) / 11) - 1) < 0.14) continue;
       addTree(x, z, rng() < 0.92 ? 'sakura' : 'maple', randRange(rng, 0.85, 1.35));
     }
   }
   for (const b of bambooSpots) if (okTree(b.x, b.z, 1.8)) addTree(b.x, b.z, 'bamboo', randRange(rng, 0.8, 1.2));
-  // Forest everywhere else.
-  const target = 2400;
+  // Forest everywhere else: significantly more trees, especially dense in woods.
+  const target = 4200;
   let forestCount = 0;
-  for (let i = 0; i < target * 8 && forestCount < target; i++) {
+  for (let i = 0; i < target * 10 && forestCount < target; i++) {
     const x = randRange(rng, -HALF + 4, HALF - 4);
     const z = randRange(rng, -HALF + 4, HALF - 4);
     if (groveWeight(v, x, z) > 0.05) continue;
@@ -309,7 +312,7 @@ export function layoutValley(v: ValleyData): ValleyLayout {
     if (forest < -0.05 && rng() > 0.15) continue;
     // Denser in the middle of a wood, smaller trees at its edges.
     const edge = THREE.MathUtils.smoothstep(forest, -0.05, 0.35);
-    if (!okTree(x, z, 2.6 + (1 - edge) * 1.5)) continue;
+    if (!okTree(x, z, 1.85 + (1 - edge) * 1.6)) continue;
     const slope = v.slopeAt(x, z);
     let sp: TreeSpecies;
     if (y > 18 || slope > 0.7) sp = rng() < 0.85 ? 'pine' : 'maple';
@@ -322,14 +325,14 @@ export function layoutValley(v: ValleyData): ValleyLayout {
     forestCount++;
   }
   // A few cherry trees along the river near the footbridge.
-  for (let k = 0; k < 40; k++) {
+  for (let k = 0; k < 55; k++) {
     const i = Math.floor(rng() * v.river.xs.length);
     const along = new THREE.Vector3(v.river.xs[i], 0, v.river.zs[i]);
-    if (along.distanceTo(fb.center) > 70) continue;
+    if (along.distanceTo(fb.center) > 75) continue;
     const s = rng() < 0.5 ? -1 : 1;
     const x = along.x + fb.across.x * s * (v.river.hw[i] + 6);
     const z = along.z + fb.across.z * s * (v.river.hw[i] + 6);
-    if (okTree(x, z, 4)) addTree(x, z, 'sakura', randRange(rng, 0.9, 1.3));
+    if (okTree(x, z, 3.6)) addTree(x, z, 'sakura', randRange(rng, 0.9, 1.3));
   }
 
   // ---- ground cover (generated at full density; detail takes a prefix)
