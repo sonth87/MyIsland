@@ -321,7 +321,13 @@ export class Ui {
 
   speaking(): number[] {
     const now = performance.now();
-    return [...this.bubbles.entries()].filter(([, b]) => b.until > now).map(([id]) => id);
+    const ids: number[] = [];
+    for (const [id, b] of this.bubbles) {
+      // Expired bubbles are no longer positioned, so hide them here or they would stay on screen.
+      if (b.until > now) ids.push(id);
+      else b.el.classList.remove('show');
+    }
+    return ids;
   }
 
   placeBubble(id: number, x: number, y: number, visible: boolean): void {
