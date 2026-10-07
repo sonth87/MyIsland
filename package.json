@@ -1,11 +1,12 @@
 {
   "name": "g2",
   "private": true,
+  "homepage": "https://white-heron-castle.vercel.app/",
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter keepsakeland dev",
-    "dev:keepsake": "pnpm --filter keepsakeland dev",
+    "dev": "pnpm --filter himeji-castle dev",
     "dev:himeji": "pnpm --filter himeji-castle dev",
+    "dev:keepsake": "pnpm --filter keepsakeland dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",

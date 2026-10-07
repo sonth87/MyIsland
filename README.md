@@ -2,19 +2,23 @@
 
 > **Hai thế giới 3D tương tác phong cách hoạt hình (stylized) chạy trực tiếp trên trình duyệt web.**  
 > Dự án được xây dựng hoàn toàn từ số không với **Three.js**, **TypeScript**, và hệ thống engine nội bộ sinh thủ tục (**procedural engine**). Toàn bộ mô hình, cảnh quan, hiệu ứng thời tiết và âm thanh đều được tạo bằng code — **không cần tải mô hình 3D dung lượng lớn, không cần file âm thanh bên ngoài**.
+>
+> 🎮 **Trải nghiệm trực tiếp trên web (Live Demos):**
+> - 🏯 **Himeji Castle (Trải nghiệm chính):** [https://white-heron-castle.vercel.app/](https://white-heron-castle.vercel.app/)
+> - 🌍 **Keepsakeland:** [https://keepsakeland.vercel.app/](https://keepsakeland.vercel.app/)
 
 ---
 
 ## 📑 Mục lục
 - [✨ Điểm nổi bật](#-điểm-nổi-bật)
-- [🌍 1. Keepsakeland (Hành Tinh Kỷ Niệm)](#1-keepsakeland-hành-tinh-kỷ-niệm)
+- [🏯 1. Himeji Castle (Lâu Đài Himeji & Thung Lũng — Chính)](#1-himeji-castle-lâu-đài-himeji--thung-lũng--chính)
   - [Trải nghiệm & Tính năng](#trải-nghiệm--tính-năng)
-  - [Dàn nhân vật](#dàn-nhân-vật)
-  - [Bảng điều khiển](#bảng-điều-khiển-keepsakeland)
-- [🏯 2. Himeji Castle (Lâu Đài Himeji & Thung Lũng)](#2-himeji-castle-lâu-đài-himeji--thung-lũng)
-  - [Trải nghiệm & Tính năng](#trải-nghiệm--tính-năng-1)
   - [9 Chế độ Camera Điện ảnh](#9-chế-độ-camera-điện-ảnh)
-  - [Bảng điều khiển](#bảng-điều-khiển-himeji-castle)
+  - [Bảng điều khiển (Himeji Castle)](#bảng-điều-khiển-himeji-castle)
+- [🌍 2. Keepsakeland (Hành Tinh Kỷ Niệm)](#2-keepsakeland-hành-tinh-kỷ-niệm)
+  - [Trải nghiệm & Tính năng](#trải-nghiệm--tính-năng-1)
+  - [Dàn nhân vật](#dàn-nhân-vật)
+  - [Bảng điều khiển (Keepsakeland)](#bảng-điều-khiển-keepsakeland)
 - [⚙️ Engine Dùng Chung (`@g2/engine`)](#️-engine-dùng-chung-g2engine)
   - [Đồ hoạ Stylized & Custom Shaders](#đồ-hoạ-stylized--custom-shaders)
   - [Chu kỳ Ngày / Đêm & Thời tiết Năng động](#chu-kỳ-ngày--đêm--thời-tiết-năng-động)
@@ -38,54 +42,9 @@
 
 ---
 
-## 🌍 1. Keepsakeland (Hành Tinh Kỷ Niệm)
+## 🏯 1. Himeji Castle (Lâu Đài Himeji & Thung Lũng — Chính)
 
-Đi dạo và tự do khám phá một tiểu hành tinh hình cầu nhỏ nhắn, yên bình với hồ nước trong vắt, cánh đồng lúa bậc thang, ngôi làng cổ và ngọn núi phủ tuyết trắng.
-
-![Keepsakeland](screenshots/keepsakeland/01-gioi-thieu.png)
-
-### Trải nghiệm & Tính năng
-- **Trọng lực hình cầu:** Nhân vật di chuyển mượt mà trên bề mặt cong của hành tinh với trọng lực hướng tâm.
-- **Tương tác phong phú:** Trò chuyện với dân làng, rung cây khiến lá bay rụng theo chiều gió, ngồi xuống ghế đá bên bờ hồ ngắm cảnh, giơ máy ảnh chụp với hiệu ứng chớp flash và âm thanh màn trập chân thực.
-- **3 Góc nhìn camera linh hoạt:** Góc nhìn thứ nhất (nhìn qua mắt nhân vật), góc nhìn thứ hai (camera cố định trước mặt, điều khiển kiểu xe tăng), và góc nhìn thứ ba (sau lưng).
-- **Chuyển đổi góc nhìn toàn cảnh (Overview):** Thu phóng và xoay quanh cả hành tinh lơ lửng giữa không gian với lớp khí quyển phát sáng.
-
-| Bình minh / Dạo bước | Hoàng hôn rực rỡ |
-|:---:|:---:|
-| ![](screenshots/keepsakeland/02-di-bo.png) | ![](screenshots/keepsakeland/05-hoang-hon.png) |
-| **Bầu trời đêm & Ánh đèn** | **Mùa đông tuyết phủ** |
-| ![](screenshots/keepsakeland/06-dem.png) | ![](screenshots/keepsakeland/08-tuyet.png) |
-
-### Dàn nhân vật
-Bạn có thể tự do chuyển đổi để trực tiếp điều khiển bất kỳ ai trong số 5 nhân vật trên đảo (nhấn `Tab` hoặc click chọn):
-1. **Lữ khách (Traveler):** Đeo máy ảnh, thích đi dạo ngắm nhìn cảnh vật.
-2. **Bác nông dân (Farmer):** Đội nón rơm, chăm sóc cánh đồng lúa bên sườn đồi.
-3. **Bé Hana (Kid):** Năng động, mang túi nhỏ, thích chạy nhảy và ngắm chuồn chuồn.
-4. **Ông câu cá (Fisher):** Ngồi câu cá thư thái bên bờ hồ ngắm hoàng hôn.
-5. **Người đưa thư (Postman):** Nón đỏ và túi thư, miệt mài rảo bước quanh các nẻo đường làng.
-
-### Bảng điều khiển (Keepsakeland)
-
-| Thao tác / Phím | Chức năng |
-|---|---|
-| `W, A, S, D` / `Phím mũi tên` | Di chuyển nhân vật (A/D xoay hướng ở góc nhìn thứ hai) |
-| `Giữ Shift` | Chạy nhanh |
-| `Space` | Nhảy / Đứng dậy khi đang ngồi ghế |
-| `Click chuột trái` | Di chuyển tới điểm nhấp (Click-to-move) |
-| `Kéo chuột` | Xoay góc nhìn camera |
-| `Lăn chuột` | Thu phóng khoảng cách máy quay |
-| `E` | Tương tác: Trò chuyện NPC, rung cây rụng lá, ngồi ghế |
-| `C` | Chụp ảnh (kèm hiệu ứng flash và âm thanh màn trập) |
-| `Q` | Vẫy tay chào |
-| `Tab` | Chuyển sang điều khiển nhân vật gần nhất |
-| `V` hoặc `1`, `2`, `3` | Đổi góc nhìn: Thứ nhất (`1`), Thứ hai (`2`), Thứ ba (`3`) |
-| `Esc` / `M` | Chuyển đổi giữa Chế độ đi bộ và Toàn cảnh hành tinh (Overview) |
-| `Giữ T` | Tua nhanh thời gian trong ngày (Fast forward) |
-| `O` | Mở bảng Cài đặt (thời gian, thời tiết, gió, đồ hoạ, âm thanh) |
-
----
-
-## 🏯 2. Himeji Castle (Lâu Đài Himeji & Thung Lũng)
+> 🔗 **Chơi trực tiếp:** [https://white-heron-castle.vercel.app/](https://white-heron-castle.vercel.app/)
 
 Đắm chìm vào thung lũng Nhật Bản truyền thống thơ mộng: lâu đài Himeji 5 tầng uy nghiêm trên đỉnh đồi đá ishigaki, bao quanh bởi rừng hoa anh đào nở rộ, những ngôi nhà mái ngói machiya cổ kính, dòng sông uốn khúc và tuyến đường sắt hơi nước chạy quanh thung lũng.
 
@@ -137,6 +96,55 @@ Nhấn các phím từ `1` đến `9` để lập tức chuyển sang các góc 
 
 ---
 
+## 🌍 2. Keepsakeland (Hành Tinh Kỷ Niệm)
+
+> 🔗 **Chơi trực tiếp:** [https://keepsakeland.vercel.app/](https://keepsakeland.vercel.app/)
+
+Đi dạo và tự do khám phá một tiểu hành tinh hình cầu nhỏ nhắn, yên bình với hồ nước trong vắt, cánh đồng lúa bậc thang, ngôi làng cổ và ngọn núi phủ tuyết trắng.
+
+![Keepsakeland](screenshots/keepsakeland/01-gioi-thieu.png)
+
+### Trải nghiệm & Tính năng
+- **Trọng lực hình cầu:** Nhân vật di chuyển mượt mà trên bề mặt cong của hành tinh với trọng lực hướng tâm.
+- **Tương tác phong phú:** Trò chuyện với dân làng, rung cây khiến lá bay rụng theo chiều gió, ngồi xuống ghế đá bên bờ hồ ngắm cảnh, giơ máy ảnh chụp với hiệu ứng chớp flash và âm thanh màn trập chân thực.
+- **3 Góc nhìn camera linh hoạt:** Góc nhìn thứ nhất (nhìn qua mắt nhân vật), góc nhìn thứ hai (camera cố định trước mặt, điều khiển kiểu xe tăng), và góc nhìn thứ ba (sau lưng).
+- **Chuyển đổi góc nhìn toàn cảnh (Overview):** Thu phóng và xoay quanh cả hành tinh lơ lửng giữa không gian với lớp khí quyển phát sáng.
+
+| Bình minh / Dạo bước | Hoàng hôn rực rỡ |
+|:---:|:---:|
+| ![](screenshots/keepsakeland/02-di-bo.png) | ![](screenshots/keepsakeland/05-hoang-hon.png) |
+| **Bầu trời đêm & Ánh đèn** | **Mùa đông tuyết phủ** |
+| ![](screenshots/keepsakeland/06-dem.png) | ![](screenshots/keepsakeland/08-tuyet.png) |
+
+### Dàn nhân vật
+Bạn có thể tự do chuyển đổi để trực tiếp điều khiển bất kỳ ai trong số 5 nhân vật trên đảo (nhấn `Tab` hoặc click chọn):
+1. **Lữ khách (Traveler):** Đeo máy ảnh, thích đi dạo ngắm nhìn cảnh vật.
+2. **Bác nông dân (Farmer):** Đội nón rơm, chăm sóc cánh đồng lúa bên sườn đồi.
+3. **Bé Hana (Kid):** Năng động, mang túi nhỏ, thích chạy nhảy và ngắm chuồn chuồn.
+4. **Ông câu cá (Fisher):** Ngồi câu cá thư thái bên bờ hồ ngắm hoàng hôn.
+5. **Người đưa thư (Postman):** Nón đỏ và túi thư, miệt mài rảo bước quanh các nẻo đường làng.
+
+### Bảng điều khiển (Keepsakeland)
+
+| Thao tác / Phím | Chức năng |
+|---|---|
+| `W, A, S, D` / `Phím mũi tên` | Di chuyển nhân vật (A/D xoay hướng ở góc nhìn thứ hai) |
+| `Giữ Shift` | Chạy nhanh |
+| `Space` | Nhảy / Đứng dậy khi đang ngồi ghế |
+| `Click chuột trái` | Di chuyển tới điểm nhấp (Click-to-move) |
+| `Kéo chuột` | Xoay góc nhìn camera |
+| `Lăn chuột` | Thu phóng khoảng cách máy quay |
+| `E` | Tương tác: Trò chuyện NPC, rung cây rụng lá, ngồi ghế |
+| `C` | Chụp ảnh (kèm hiệu ứng flash và âm thanh màn trập) |
+| `Q` | Vẫy tay chào |
+| `Tab` | Chuyển sang điều khiển nhân vật gần nhất |
+| `V` hoặc `1`, `2`, `3` | Đổi góc nhìn: Thứ nhất (`1`), Thứ hai (`2`), Thứ ba (`3`) |
+| `Esc` / `M` | Chuyển đổi giữa Chế độ đi bộ và Toàn cảnh hành tinh (Overview) |
+| `Giữ T` | Tua nhanh thời gian trong ngày (Fast forward) |
+| `O` | Mở bảng Cài đặt (thời gian, thời tiết, gió, đồ hoạ, âm thanh) |
+
+---
+
 ## ⚙️ Engine Dùng Chung (`@g2/engine`)
 
 Hai dự án chia sẻ một engine nội bộ được thiết kế dạng modular tại thư mục `packages/engine`:
@@ -184,15 +192,15 @@ packages/engine/src/
 ```
 g2/
 ├── apps/
-│   ├── keepsakeland/       # Trải nghiệm tiểu hành tinh kỷ niệm
-│   │   ├── src/planet/     # Thuật toán tạo hình cầu và rải vật thể (scatter)
-│   │   ├── src/player/     # Bộ điều khiển nhân vật trên mặt cầu
-│   │   └── src/ui/         # Giao diện HUD, đồng hồ, bảng cài đặt
-│   └── himeji-castle/      # Trải nghiệm thung lũng & lâu đài Himeji
-│       ├── src/world/      # Sinh thung lũng, lâu đài Himeji, chùa tháp, machiya
-│       ├── src/train/      # Vật lý đầu máy hơi nước, bám ray rayMesh, toa xe
-│       ├── src/boat/       # Vật lý cano lướt nước và vệt rẽ sóng
-│       └── src/cameras/    # Bộ điều phối 9 góc camera điện ảnh
+│   ├── himeji-castle/      # Trải nghiệm thung lũng & lâu đài Himeji (chính)
+│   │   ├── src/world/      # Sinh thung lũng, lâu đài Himeji, chùa tháp, machiya
+│   │   ├── src/train/      # Vật lý đầu máy hơi nước, bám ray rayMesh, toa xe
+│   │   ├── src/boat/       # Vật lý cano lướt nước và vệt rẽ sóng
+│   │   └── src/cameras/    # Bộ điều phối 9 góc camera điện ảnh
+│   └── keepsakeland/       # Trải nghiệm tiểu hành tinh kỷ niệm
+│       ├── src/planet/     # Thuật toán tạo hình cầu và rải vật thể (scatter)
+│       ├── src/player/     # Bộ điều khiển nhân vật trên mặt cầu
+│       └── src/ui/         # Giao diện HUD, đồng hồ, bảng cài đặt
 ├── packages/
 │   └── engine/             # Engine đồ hoạ, âm thanh và vật lý dùng chung
 ├── screenshots/            # Bộ ảnh chụp minh hoạ chất lượng cao
@@ -210,22 +218,25 @@ g2/
 
 ### Khởi chạy nhanh
 
+> **Chơi trực tuyến ngay không cần cài đặt:**  
+> 🏯 [white-heron-castle.vercel.app](https://white-heron-castle.vercel.app/) *(Trải nghiệm chính)* &nbsp;|&nbsp; 🌍 [keepsakeland.vercel.app](https://keepsakeland.vercel.app/)
+
 1. **Cài đặt dependencies:**
    ```bash
    pnpm install
    ```
 
-2. **Chạy thử Keepsakeland (Hành tinh nhỏ):**
+2. **Chạy thử Himeji Castle (Lâu đài & Đoàn tàu — Trải nghiệm chính):**
+   ```bash
+   pnpm dev           # hoặc pnpm dev:himeji
+   ```
+   Mở trình duyệt tại địa chỉ hiển thị trên terminal (thường là `http://localhost:5174`).
+
+3. **Chạy thử Keepsakeland (Hành tinh nhỏ):**
    ```bash
    pnpm dev:keepsake
    ```
    Mở trình duyệt tại địa chỉ hiển thị trên terminal (thường là `http://localhost:5173`).
-
-3. **Chạy thử Himeji Castle (Lâu đài & Đoàn tàu):**
-   ```bash
-   pnpm dev:himeji
-   ```
-   Mở trình duyệt tại địa chỉ hiển thị trên terminal (thường là `http://localhost:5174`).
 
 ### Các lệnh hữu ích khác
 
@@ -243,27 +254,27 @@ pnpm build
 pnpm screenshots
 ```
 
-> **💡 Mẹo Debug:** Thêm tham số `?debug` vào URL khi chạy (ví dụ `http://localhost:5173/?debug`) để kích hoạt bảng điều khiển Lil-GUI, cho phép tinh chỉnh trực tiếp độ dày viền mực, cường độ ánh sáng, lực gió và các thông số shader theo thời gian thực!
+> **💡 Mẹo Debug:** Thêm tham số `?debug` vào URL khi chạy (ví dụ `http://localhost:5174/?debug`) để kích hoạt bảng điều khiển Lil-GUI, cho phép tinh chỉnh trực tiếp độ dày viền mực, cường độ ánh sáng, lực gió và các thông số shader theo thời gian thực!
 
 ---
 
 ## ⌨️ Bảng Tra Cứu Phím Tắt Nhanh (Cheat Sheet)
 
-| Phím tắt | Keepsakeland | Himeji Castle |
+| Phím tắt | Himeji Castle (Chính) | Keepsakeland |
 |:---:|---|---|
-| `W, A, S, D` | Di chuyển nhân vật | Di chuyển góc nhìn / Lái tàu / Lái cano / Bay tự do |
-| `Space` | Nhảy / Đứng dậy | Phanh tàu hoả / Bay nâng độ cao |
-| `E` | Tương tác (nói chuyện, rung cây, ngồi ghế) | Bay nâng độ cao (chế độ bay tự do) |
-| `Q` | Vẫy tay chào | Bay hạ độ cao (chế độ bay tự do) / Xoay góc nhìn |
-| `C` | Chụp ảnh (kèm flash & âm thanh màn trập) | Bay hạ độ cao (chế độ bay tự do) |
-| `H` | — | Kéo còi tàu hoả |
-| `Tab` | Đổi sang điều khiển nhân vật khác | — |
-| `1` – `9` | Đổi góc nhìn thứ 1, 2, 3 (`1`, `2`, `3`) | Chuyển đổi 9 góc camera điện ảnh |
-| `←` / `→` | — | Đổi cầu ngắm tàu (khi ở chế độ Camera `5`) |
-| `[` / `]` | — | Giảm / tăng tốc độ bay tự do (chế độ `9`) |
-| `Giữ Shift` | Chạy nhanh | Tăng tốc độ bay tự do gấp 3 |
+| `W, A, S, D` | Di chuyển góc nhìn / Lái tàu / Lái cano / Bay tự do | Di chuyển nhân vật |
+| `Space` | Phanh tàu hoả / Bay nâng độ cao | Nhảy / Đứng dậy |
+| `E` | Bay nâng độ cao (chế độ bay tự do) | Tương tác (nói chuyện, rung cây, ngồi ghế) |
+| `Q` | Bay hạ độ cao (chế độ bay tự do) / Xoay góc nhìn | Vẫy tay chào |
+| `C` | Bay hạ độ cao (chế độ bay tự do) | Chụp ảnh (kèm flash & âm thanh màn trập) |
+| `H` | Kéo còi tàu hoả | — |
+| `Tab` | — | Đổi sang điều khiển nhân vật khác |
+| `1` – `9` | Chuyển đổi 9 góc camera điện ảnh | Đổi góc nhìn thứ 1, 2, 3 (`1`, `2`, `3`) |
+| `←` / `→` | Đổi cầu ngắm tàu (khi ở chế độ Camera `5`) | — |
+| `[` / `]` | Giảm / tăng tốc độ bay tự do (chế độ `9`) | — |
+| `Giữ Shift` | Tăng tốc độ bay tự do gấp 3 | Chạy nhanh |
 | `Giữ T` | Tua nhanh thời gian ngày/đêm | Tua nhanh thời gian ngày/đêm |
 | `O` | Bật / tắt bảng Cài đặt | Bật / tắt bảng Cài đặt |
-| `Esc` | Đóng menu / Chuyển sang Toàn cảnh hành tinh | Đóng menu / Chuyển sang Camera Toàn cảnh (`1`) |
-| `Click / Kéo chuột` | Click-to-move / Xoay máy quay | Kéo dời bản đồ / Xoay camera / Lái hướng nhìn |
-| `Lăn chuột` | Thu phóng khoảng cách máy quay | Phóng to / Thu nhỏ bản đồ và góc nhìn |
+| `Esc` | Đóng menu / Chuyển sang Camera Toàn cảnh (`1`) | Đóng menu / Chuyển sang Toàn cảnh hành tinh |
+| `Click / Kéo chuột` | Kéo dời bản đồ / Xoay camera / Lái hướng nhìn | Click-to-move / Xoay máy quay |
+| `Lăn chuột` | Phóng to / Thu nhỏ bản đồ và góc nhìn | Thu phóng khoảng cách máy quay |
