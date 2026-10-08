@@ -2,7 +2,7 @@ export type DetailLevel = 'low' | 'medium' | 'high' | 'ultra';
 
 /** Model quality (0..3) used by the procedural builders for each detail level. */
 export const QUALITY: Record<DetailLevel, number> = { low: 0, medium: 1, high: 2, ultra: 3 };
-export type ViewLevel = 'near' | 'medium' | 'far' | 'ultra';
+export type ViewLevel = 'near' | 'medium' | 'far' | 'ultra' | 'clear';
 
 export interface DetailPreset {
   label: string;
@@ -29,6 +29,7 @@ export const VIEW: Record<ViewLevel, { label: string; distance: number }> = {
   medium: { label: 'Vừa', distance: 230 },
   far: { label: 'Xa', distance: 340 },
   ultra: { label: 'Rất xa', distance: 520 },
+  clear: { label: 'Vô tận', distance: 9999 },
 };
 
 /**

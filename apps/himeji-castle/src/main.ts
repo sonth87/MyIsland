@@ -438,6 +438,7 @@ settings.subscribe((s, changed) => {
         ground.geometry = rebuilt.ground.geometry;
         rebuildVegetation();
         pond.refreshModel();
+        clouds.refreshModel();
         ui.toast(`Độ chi tiết: ${d.label}`);
       }, 30);
     }

@@ -87,7 +87,7 @@ export function buildTerrain(v: ValleyData, segments: number): { ground: THREE.M
   ground.castShadow = true;
 
   // Water plane with a per-vertex depth, so the shader can colour shallows, deeps and foam.
-  const wGeo = new THREE.PlaneGeometry(HALF * 2.2, HALF * 2.2, 240, 240).rotateX(-Math.PI / 2);
+  const wGeo = new THREE.PlaneGeometry(HALF * 2, HALF * 2, 240, 240).rotateX(-Math.PI / 2);
   const wp = wGeo.getAttribute('position');
   const depth = new Float32Array(wp.count);
   for (let i = 0; i < wp.count; i++) depth[i] = WATER_Y - v.heightAt(wp.getX(i), wp.getZ(i));

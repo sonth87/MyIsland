@@ -98,6 +98,8 @@ export interface EnvOptions {
   foliage?: boolean;
   /** Fish: the body (along +Z, head forward) undulates, more towards the tail. */
   swim?: boolean;
+  /** Never draw an ink outline around this object. */
+  noInk?: boolean;
 }
 
 
@@ -580,11 +582,13 @@ export function envNormalMaterial(options: EnvOptions, alphaMap?: THREE.Texture)
     // lines can be switched off without losing the outlines of buildings behind the trees.
     shader.fragmentShader = ('uniform float uVegetationInk;\n' + shader.fragmentShader).replace(
       'gl_FragColor.a = 1.0;',
-      `#ifdef ENV_SEASON
-        gl_FragColor.a = uVegetationInk;
-      #else
-        gl_FragColor.a = 1.0;
-      #endif`,
+      options.noInk
+        ? 'gl_FragColor.a = 0.0;'
+        : `#ifdef ENV_SEASON
+            gl_FragColor.a = uVegetationInk;
+          #else
+            gl_FragColor.a = 1.0;
+          #endif`
     );
     if (alphaMap) {
       // Each leaf card is drawn at the depth of its cluster's centre in this pass: lines then
